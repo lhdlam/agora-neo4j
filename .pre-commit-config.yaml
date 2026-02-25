@@ -1,0 +1,26 @@
+repos:
+  - repo: local
+    hooks:
+      # ── Ruff: format check ────────────────────────────────────
+      - id: ruff-format
+        name: ruff format
+        language: system
+        entry: make format CHECK=1
+        pass_filenames: false
+        always_run: true
+
+      # ── Ruff: lint ────────────────────────────────────────────
+      - id: ruff-lint
+        name: ruff lint
+        language: system
+        entry: make lint
+        pass_filenames: false
+        always_run: true
+
+      # ── Mypy: type checking ───────────────────────────────────
+      - id: mypy
+        name: mypy type check
+        language: system
+        entry: make mypy
+        pass_filenames: false
+        always_run: true

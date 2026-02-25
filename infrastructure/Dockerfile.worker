@@ -1,0 +1,60 @@
+# ── Agora Worker — Kafka consumer image ─────────────────────────────────────
+#
+# Runs: python -m src.worker
+# Listens on listing.commands topic and processes CommandMessages.
+#
+# Build context: project root (one level above infrastructure/).
+# Build with:  make docker build
+#
+# Python version must match the version declared in pyproject.toml.
+
+# ── Stage 1: Builder ────────────────────────────────────────────────────────
+FROM python:3.13-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Create and activate virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install production Python dependencies
+COPY pyproject.toml .
+RUN pip install --no-cache-dir "."
+
+# ── Stage 2: Runner ─────────────────────────────────────────────────────────
+FROM python:3.13-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install runtime system dependencies (needed by fastembed's ONNX Runtime)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy virtual env from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy source code
+COPY src/ src/
+
+# Create a non-root user for security.
+RUN useradd -m -u 1000 worker && chown -R worker:worker /app
+USER worker
+
+# The embedding model will be downloaded to $FASTEMBED_CACHE_PATH lazily at runtime
+# and stored in the worker-model-cache volume mounted by docker-compose.
+ENV FASTEMBED_CACHE_PATH=/home/worker/.cache/fastembed
+
+CMD ["python", "-m", "src.worker"]

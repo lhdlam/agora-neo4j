@@ -1,0 +1,66 @@
+# ─────────────────────────────────────────────────────────────
+# Agora Worker — Kafka consumer container
+#
+# Depends on:
+#   - Kafka  (docker-compose.kafka.yml)
+#   - Elasticsearch  (docker-compose.elasticsearch.yml)
+#
+# Start worker only:
+#   docker compose -f infrastructure/docker-compose.kafka.yml \
+#                  -f infrastructure/docker-compose.elasticsearch.yml \
+#                  -f infrastructure/docker-compose.worker.yml up -d agora-worker
+#
+# Or with make:
+#   make docker up      (starts all services including worker)
+#
+# Required .env keys:
+#   KAFKA_ENABLED=true
+#   KAFKA_WRITE_MODE=true
+#   KAFKA_BOOTSTRAP_SERVERS=kafka:9092   ← internal Docker network name
+#   ES_HOST, ES_PORT, ES_USER, ES_PASSWORD, ES_INDEX
+#   EMBEDDING_MODEL, EMBEDDING_DIMS
+# ─────────────────────────────────────────────────────────────
+
+networks:
+  agora-net:
+    name: agora-net
+    driver: bridge
+
+services:
+  worker:
+    build:
+      args:
+        EMBEDDING_MODEL: ${EMBEDDING_MODEL:?Set EMBEDDING_MODEL in .env}
+      context: ..
+      dockerfile: infrastructure/Dockerfile.worker
+    image: agora-worker:latest
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      # Override KAFKA_BOOTSTRAP_SERVERS to use the internal Docker hostname.
+      # On Docker Compose, use kafka:29092
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:29092"
+      KAFKA_ENABLED: "true"
+      KAFKA_WRITE_MODE: "true"
+      ES_HOST: "elasticsearch"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - agora-net
+    volumes:
+      - model-cache:/home/worker/.cache/fastembed
+    healthcheck:
+      test: ["CMD", "python", "-c", "import src.infrastructure.kafka_consumer"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  model-cache:
+    name: agora-model-cache
+    external: true

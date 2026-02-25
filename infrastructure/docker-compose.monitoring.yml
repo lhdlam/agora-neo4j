@@ -1,0 +1,65 @@
+# ─────────────────────────────────────────────────────────────
+# Monitoring stack: Elasticsearch Exporter + Prometheus + Grafana
+#
+# All values are controlled via .env — do NOT hardcode here.
+# Run standalone:  docker compose -f infrastructure/docker-compose.monitoring.yml up -d
+# Run with all:    make up
+# ─────────────────────────────────────────────────────────────
+
+networks:
+  agora-net:
+    name: agora-net
+    driver: bridge
+    # Declared in all compose files so each file works standalone too.
+    # Docker Compose deduplicates when running with multiple -f flags.
+
+volumes:
+  prometheus-data:
+  grafana-data:
+
+services:
+  es-exporter:
+    image: quay.io/prometheuscommunity/elasticsearch-exporter:${ES_EXPORTER_IMAGE_TAG:?Set ES_EXPORTER_IMAGE_TAG in .env}
+    restart: unless-stopped
+    command:
+      - '--es.uri=http://elasticsearch:9200'
+      - '--es.all'
+      - '--es.indices'
+      - '--es.shards'
+    ports:
+      - "${ES_EXPORTER_PORT:?Set ES_EXPORTER_PORT in .env}:9114"
+    networks:
+      - agora-net
+
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_IMAGE_TAG:?Set PROMETHEUS_IMAGE_TAG in .env}
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}'
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:?Set PROMETHEUS_PORT in .env}:9090"
+    depends_on:
+      - es-exporter
+    networks:
+      - agora-net
+
+  grafana:
+    image: grafana/grafana:${GRAFANA_IMAGE_TAG:?Set GRAFANA_IMAGE_TAG in .env}
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:?Set GRAFANA_USER in .env}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?Set GRAFANA_PASSWORD in .env}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:?Set GRAFANA_PORT in .env}:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - agora-net

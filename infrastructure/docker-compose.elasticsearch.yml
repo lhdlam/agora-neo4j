@@ -1,0 +1,64 @@
+# ─────────────────────────────────────────────────────────────
+# Elasticsearch 8.x + Kibana
+#
+# All values are controlled via .env — do NOT hardcode here.
+# Start:  docker compose -f infrastructure/docker-compose.elasticsearch.yml up -d
+#         make up-es
+#
+# ⚠️  SECURITY WARNING: xpack.security is disabled for local dev.
+# Before exposing to any shared network or production you MUST:
+#   1. Set xpack.security.enabled=true
+#   2. Generate TLS certificates (elasticsearch-certutil)
+#   3. Set a strong ES_PASSWORD in your .env file
+# ─────────────────────────────────────────────────────────────
+
+networks:
+  agora-net:
+    name: agora-net
+    driver: bridge
+
+volumes:
+  es-data:
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/${ES_IMAGE_TAG:?Set ES_IMAGE_TAG in .env}
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.http.ssl.enabled=false
+      - ES_JAVA_OPTS=${ES_JAVA_OPTS:?Set ES_JAVA_OPTS in .env}
+      - ELASTIC_PASSWORD=${ES_PASSWORD:?Set ES_PASSWORD in .env}
+      - cluster.name=${ES_CLUSTER_NAME:?Set ES_CLUSTER_NAME in .env}
+      - node.name=${ES_NODE_NAME:?Set ES_NODE_NAME in .env}
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    ports:
+      - "${ES_PORT:?Set ES_PORT in .env}:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\\|yellow\"'"]
+      interval: ${HEALTHCHECK_INTERVAL:-15s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-10s}
+      retries: ${HEALTHCHECK_RETRIES:-10}
+    networks:
+      - agora-net
+
+  kibana:
+    image: docker.elastic.co/kibana/${KIBANA_IMAGE_TAG:?Set KIBANA_IMAGE_TAG in .env}
+    restart: unless-stopped
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - xpack.security.enabled=false
+    ports:
+      - "${KIBANA_PORT:?Set KIBANA_PORT in .env}:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - agora-net
