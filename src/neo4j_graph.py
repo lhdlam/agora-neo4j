@@ -20,7 +20,7 @@ except ImportError:
 # CONFIGURATION
 # ==========================================
 TARGET_FOLDER = "src"
-NEO4J_URI = "bolt://localhost:7687"
+NEO4J_URI = f"bolt://{os.getenv('NEO4J_HOST', 'localhost')}:{os.getenv('NEO4J_PORT', '7687')}"
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
 OUTPUT_CYPHER_FILE = "import_neo4j.cypher"

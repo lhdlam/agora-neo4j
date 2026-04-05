@@ -26,7 +26,7 @@ Agora is a command-line tool for posting, searching, and agora classified ads us
 | Semantic Matching | Text embedding via `fastembed` (ONNX runtime — no PyTorch required) |
 | Hybrid Search | BM25 keyword + kNN vector combined in a single Elasticsearch query |
 | Geo-radius Filtering | Search within a configurable radius from GPS coordinates |
-| Event Bus | Optional Kafka integration (`KAFKA_ENABLED=false` by default) |
+| Event Bus | Kafka integration |
 
 ---
 
@@ -241,8 +241,6 @@ make check         # format check=1 + lint + mypy + test  (CI pipeline)
 make clean         # remove __pycache__, .mypy_cache, .ruff_cache, .pytest_cache
 ```
 
-Pre-commit hooks run `ruff lint → ruff format → mypy` automatically before every commit.
-
 ---
 
 **Request flow:**
@@ -282,28 +280,9 @@ Override in `.env` before starting the stack.
 
 ---
 
-## Categories
-
-| Value | Description |
-|-------|-------------|
-| `dien-tu` | Electronics — phones, laptops, computers |
-| `xe-may` | Motorbikes, electric bikes |
-| `oto` | Cars |
-| `nha-dat` | Real estate |
-| `do-go-noi-that` | Furniture |
-| `thoi-trang` | Fashion and apparel |
-| `the-thao` | Sports equipment |
-| `sach` | Books |
-| `thuc-pham` | Food |
-| `khac` | Other |
-
----
-
 ## Testing
 
 ```bash
 make test cov=1    # pytest with coverage
 make test          # pytest without coverage
 ```
-
-Test coverage spans `domain/` (embed_text, models) and `services/` (listing_service, search_service, match_service).
