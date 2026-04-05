@@ -121,7 +121,7 @@ No layer may import from a layer above it.
 | Linter | `ruff>=0.9.0` |
 | Types | `mypy>=1.15.0` (strict) |
 | Tests | `pytest>=8.0.0` + `pytest-cov>=6.0.0` |
-| Code graph | `neo4j` + `pyan3` (see `generate_neo4j_graph.py`) |
+| Code graph | `neo4j` + `pyan3` (see `src/neo4j_graph.py`) |
 
 ---
 
@@ -147,7 +147,7 @@ No layer may import from a layer above it.
 
 ### 3.4 Testing
 - Tests live in `src/tests/`.
-- Minimum coverage: **80%** on `src/`.
+- Minimum coverage: **98%** on `src/`.
 - Test files: `test_*.py`; classes: `Test*`; functions: `test_*`.
 - Use `pytest.raises`, `unittest.mock.patch`, or `MagicMock` — no third-party mocking libs.
 
@@ -202,7 +202,7 @@ MATCH_BONUS_SAME_CITY     = 0.03
 10. Register in src/commands/__init__.py → register()
 11. Add tests in src/tests/ using FakeStore/FakeEmbedder pattern
 12. Run: make check  (must pass fully)
-13. Re-run generate_neo4j_graph.py to keep the graph in sync
+13. Re-run `neo4j-graph` to keep the graph in sync
 ```
 
 ### Makefile targets (use these, do not invent manual commands)
@@ -229,7 +229,6 @@ make clean          # remove caches
 - **Never hard-code** host/port — always read from `settings`.
 
 ### Kafka
-- Disabled by default (`KAFKA_ENABLED=false`).
 - Publish events **after** successful ES indexing.
 - Do not let Kafka failures block the happy path (log and continue).
 
@@ -240,34 +239,6 @@ make clean          # remove caches
 ---
 
 ## 7. Environment & Configuration
-
-```dotenv
-# Required
-ES_HOST=localhost
-ES_PORT=9200
-ES_INDEX=listings
-
-# Embedding
-EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-mpnet-base-v2
-EMBEDDING_DIMS=768
-
-# Kafka (optional)
-KAFKA_ENABLED=false
-KAFKA_BOOTSTRAP_SERVERS=localhost:9092
-KAFKA_TOPIC_LISTING=listing.events
-
-# Matching tuning
-MATCH_TOP_K=10
-MATCH_NUM_CANDIDATES=50
-MATCH_MIN_COSINE_SCORE=0.65
-MATCH_BONUS_SAME_CATEGORY=0.07
-MATCH_BONUS_SAME_CITY=0.03
-
-# Infra credentials (dev defaults — override in .env)
-ELASTIC_PASSWORD=changeme
-GRAFANA_USER=admin
-GRAFANA_PASSWORD=admin
-```
 
 Copy `.env.example` → `.env` before running.
 
@@ -287,7 +258,6 @@ Copy `.env.example` → `.env` before running.
 - ❌ Do not mix SELL-only and BUY-only attributes in the shared `Listing` model body.
 - ❌ Do not call `listing.to_es_doc()` — method removed; use `listing_to_es_doc(listing)` from `src.infrastructure.serializers`.
 - ❌ Do not patch `src.commands.commands.ListingService` in tests — patch the specific command module (e.g., `src.commands.post.make_listing_service`).
-- ❌ Do not forget to re-run `generate_neo4j_graph.py` after adding/removing/renaming code components.
 
 ---
 
