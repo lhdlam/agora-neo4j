@@ -27,9 +27,6 @@ Agora is a command-line tool for posting, searching, and agora classified ads us
 | Hybrid Search | BM25 keyword + kNN vector combined in a single Elasticsearch query |
 | Geo-radius Filtering | Search within a configurable radius from GPS coordinates |
 | Event Bus | Optional Kafka integration (`KAFKA_ENABLED=false` by default) |
-| Type Safety | Strict Mypy — zero errors on all production code |
-| Input Validation | Email and phone format validation via Pydantic v2 |
-| Monitoring | Prometheus metrics + Grafana dashboards included |
 
 ---
 
@@ -38,8 +35,6 @@ Agora is a command-line tool for posting, searching, and agora classified ads us
 ```
 Python 3.13+          — runtime
 Docker & Compose      — infrastructure (Elasticsearch, Kafka, Prometheus, Grafana)
-~2 GB RAM             — Elasticsearch
-~600 MB disk          — AI embedding model (downloaded on first run)
 ```
 
 ---
@@ -82,7 +77,7 @@ make docker ai-model-volume
 ### 5. Start the infrastructure
 
 ```bash
-make docker up
+make docker
 ```
 
 ### 6. Quick smoke test
@@ -100,6 +95,15 @@ agora search "Apple flagship smartphone"
 
 # BUY -> SELL matching
 agora match --query "need a high-performance gaming laptop" --budget 40000000
+```
+
+### 7. Generate Neo4j Graph (Optional: Only for AI agents)
+
+**Prerequisites:**
+- pip install neo4j pyan3
+
+```bash
+neo4j-graph
 ```
 
 ---
@@ -295,38 +299,6 @@ Override in `.env` before starting the stack.
 
 ---
 
-## Configuration Reference
-
-```dotenv
-# Elasticsearch
-ES_HOST=localhost
-ES_PORT=9200
-ES_SCHEME=http          # "https" for production / Elastic Cloud
-ES_INDEX=listings
-ES_USER=elastic         # required by ES 8.x
-ES_PASSWORD=changeme    # override via ECS secrets in production
-
-# Embedding model
-EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-mpnet-base-v2
-EMBEDDING_DIMS=768        # must match the model output and ES mapping
-
-# Kafka (disabled by default)
-KAFKA_ENABLED=false
-KAFKA_BOOTSTRAP_SERVERS=localhost:9092
-KAFKA_TOPIC_LISTING=listing.events
-
-# Matching
-MATCH_TOP_K=10
-MATCH_NUM_CANDIDATES=50
-
-# Infrastructure credentials (dev defaults — change in production)
-ELASTIC_PASSWORD=changeme   # docker-compose only
-GRAFANA_USER=admin
-GRAFANA_PASSWORD=admin
-```
-
----
-
 ## Testing
 
 ```bash
@@ -335,11 +307,3 @@ make test          # pytest without coverage
 ```
 
 Test coverage spans `domain/` (embed_text, models) and `services/` (listing_service, search_service, match_service).
-
----
-
-<div align="center">
-
-Built with **Python 3.13** · **Elasticsearch 8** · **fastembed** · **Pydantic v2** · **Click** · **Rich**
-
-</div>

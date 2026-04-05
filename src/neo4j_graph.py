@@ -1,20 +1,28 @@
 from __future__ import annotations
 
 import ast
-import logging
 from dataclasses import dataclass, field
+import logging
+import os
 from pathlib import Path
+import sys
 
-from neo4j import GraphDatabase
-from pyan.analyzer import CallGraphVisitor
+try:
+    from neo4j import GraphDatabase
+    from pyan.analyzer import (
+        CallGraphVisitor,
+    )
+except ImportError:
+    sys.stderr.write("Please install neo4j and pyan3: [pip install neo4j pyan3]\n")
+    sys.exit(1)
 
 # ==========================================
 # CONFIGURATION
 # ==========================================
 TARGET_FOLDER = "src"
 NEO4J_URI = "bolt://localhost:7687"
-NEO4J_USER = "neo4j"
-NEO4J_PASSWORD = "password"
+NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
 OUTPUT_CYPHER_FILE = "import_neo4j.cypher"
 
 logger = logging.getLogger(__name__)
@@ -173,7 +181,7 @@ def _is_project_module(name: str) -> bool:
 
 def _is_valid_pyan_node(name: str) -> bool:
     """Filter out pyan synthetic nodes and external library references."""
-    if name.startswith("*.") or name.startswith("---:"):
+    if name.startswith(("*.", "---:")):
         return False
     return not any(s in name for s in _SYNTHETIC_SUFFIXES)
 
@@ -327,8 +335,8 @@ def _extract_call_edges(py_files: list[str], graph: GraphData) -> None:
     """Use pyan3 to extract CALLS relationships from the project call graph."""
     try:
         visitor = CallGraphVisitor(py_files)
-    except (SyntaxError, TypeError, ValueError) as e:
-        logger.exception("Failed to analyze call graph with pyan3: %s", e)
+    except (SyntaxError, TypeError, ValueError):
+        logger.exception("Failed to analyze call graph with pyan3")
         return
 
     known = set(graph.nodes.keys())
@@ -471,26 +479,25 @@ def push_to_neo4j(
     """Push the enriched knowledge graph directly into a running Neo4j instance."""
     logger.info("Connecting to Neo4j at %s ...", uri)
 
-    with GraphDatabase.driver(uri, auth=(user, password)) as driver:
-        with driver.session() as session:
-            # Clear all existing data before re-import
-            session.run("MATCH (n) DETACH DELETE n")
-            logger.info("Cleared existing graph data.")
+    with GraphDatabase.driver(uri, auth=(user, password)) as driver, driver.session() as session:
+        # Clear all existing data before re-import
+        session.run("MATCH (n) DETACH DELETE n")
+        logger.info("Cleared existing graph data.")
 
-            # Create Layer nodes
-            logger.info("Creating %d Layer nodes...", len(LAYER_DESCRIPTIONS))
-            for layer_name, description in LAYER_DESCRIPTIONS.items():
-                session.run(
-                    "MERGE (l:Layer {name: $name}) SET l.description = $description",
-                    name=layer_name,
-                    description=description,
-                )
+        # Create Layer nodes
+        logger.info("Creating %d Layer nodes...", len(LAYER_DESCRIPTIONS))
+        for layer_name, description in LAYER_DESCRIPTIONS.items():
+            session.run(
+                "MERGE (l:Layer {name: $name}) SET l.description = $description",
+                name=layer_name,
+                description=description,
+            )
 
-            # Create Component nodes with all metadata properties
-            logger.info("Creating %d Component nodes...", len(graph.nodes))
-            for node in graph.nodes.values():
-                session.run(
-                    """
+        # Create Component nodes with all metadata properties
+        logger.info("Creating %d Component nodes...", len(graph.nodes))
+        for node in graph.nodes.values():
+            session.run(
+                """
                     MERGE (n:Component {name: $name})
                     SET n.kind        = $kind,
                         n.module      = $module,
@@ -500,37 +507,37 @@ def push_to_neo4j(
                         n.docstring   = $docstring,
                         n.signature   = $signature
                     """,
-                    name=node.name,
-                    kind=node.kind,
-                    module=node.module,
-                    layer=node.layer,
-                    source_file=node.source_file,
-                    line_number=node.line_number,
-                    docstring=node.docstring,
-                    signature=node.signature,
-                )
+                name=node.name,
+                kind=node.kind,
+                module=node.module,
+                layer=node.layer,
+                source_file=node.source_file,
+                line_number=node.line_number,
+                docstring=node.docstring,
+                signature=node.signature,
+            )
 
-            def _push_edges(
-                rel_type: str,
-                edges: set[tuple[str, str]],
-                target_label: str = "Component",
-            ) -> None:
-                """Push a batch of typed relationships into Neo4j."""
-                logger.info("Creating %d %s edges...", len(edges), rel_type)
-                # rel_type and target_label are internal constants — safe to interpolate
-                query = (
-                    f"MATCH (a:Component {{name: $src}}), (b:{target_label} {{name: $dst}}) "
-                    f"MERGE (a)-[:{rel_type}]->(b)"
-                )
-                for src, dst in edges:
-                    session.run(query, src=src, dst=dst)
+        def _push_edges(
+            rel_type: str,
+            edges: set[tuple[str, str]],
+            target_label: str = "Component",
+        ) -> None:
+            """Push a batch of typed relationships into Neo4j."""
+            logger.info("Creating %d %s edges...", len(edges), rel_type)
+            # rel_type and target_label are internal constants — safe to interpolate
+            query = (
+                f"MATCH (a:Component {{name: $src}}), (b:{target_label} {{name: $dst}}) "
+                f"MERGE (a)-[:{rel_type}]->(b)"
+            )
+            for src, dst in edges:
+                session.run(query, src=src, dst=dst)
 
-            _push_edges("CALLS", graph.calls_edges)
-            _push_edges("IMPORTS", graph.imports_edges)
-            _push_edges("INHERITS", graph.inherits_edges)
-            _push_edges("IMPLEMENTS", graph.implements_edges)
-            _push_edges("DEFINED_IN", graph.defined_in_edges)
-            _push_edges("BELONGS_TO_LAYER", graph.belongs_to_layer_edges, target_label="Layer")
+        _push_edges("CALLS", graph.calls_edges)
+        _push_edges("IMPORTS", graph.imports_edges)
+        _push_edges("INHERITS", graph.inherits_edges)
+        _push_edges("IMPLEMENTS", graph.implements_edges)
+        _push_edges("DEFINED_IN", graph.defined_in_edges)
+        _push_edges("BELONGS_TO_LAYER", graph.belongs_to_layer_edges, target_label="Layer")
 
     logger.info(
         "Push complete — nodes: %d | CALLS: %d | IMPORTS: %d | "
@@ -544,13 +551,17 @@ def push_to_neo4j(
     )
 
 
-# ==========================================
-# ENTRY POINT
-# ==========================================
-
-if __name__ == "__main__":
+def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     graph_data = build_graph_data(TARGET_FOLDER)
     if graph_data:
         write_cypher_file(graph_data, OUTPUT_CYPHER_FILE)
         push_to_neo4j(graph_data)
+
+
+# ==========================================
+# ENTRY POINT
+# ==========================================
+
+if __name__ == "__main__":
+    main()

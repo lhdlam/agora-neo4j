@@ -26,6 +26,7 @@ dependencies = [
 
 [project.scripts]
 agora = "src.cli:cli"
+neo4j-graph = "src.neo4j_graph:main"
 
 [project.optional-dependencies]
 dev = [
@@ -116,6 +117,7 @@ module = [
     "kafka.*",
     "elasticsearch.*",
     "elastic_transport.*",
+    "pyan.*",
 ]
 ignore_missing_imports = true
 ignore_errors          = true
@@ -135,7 +137,7 @@ python_functions = "test_*"
 # ──────────────────────────────────────────────────────────────
 [tool.coverage.run]
 source   = ["src"]
-omit     = ["src/__main__.py", "src/http.py"]
+omit     = ["src/__main__.py", "src/http.py", "src/neo4j_graph.py"]
 
 [tool.coverage.report]
 fail_under = 98

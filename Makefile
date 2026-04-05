@@ -166,4 +166,5 @@ clean:  ## Remove build artifacts and caches
 	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
 	find . -name "*.pyc" -delete 2>/dev/null || true
+	find . -name "*.cypher" -delete 2>/dev/null || true
 	@echo "✅  Cleaned."
