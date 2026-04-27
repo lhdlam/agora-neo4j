@@ -19,7 +19,7 @@ except ImportError:
 # ==========================================
 # CONFIGURATION
 # ==========================================
-TARGET_FOLDER = "src"
+TARGET_FOLDER = "/Users/lammor/Documents/MOR/numo_app/NUMO_Prototype/src"
 NEO4J_URI = f"bolt://{os.getenv('NEO4J_HOST', 'localhost')}:{os.getenv('NEO4J_PORT', '7687')}"
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
