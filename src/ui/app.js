@@ -115,6 +115,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function getLanguageBadge(lang) {
+        const langMap = {
+            'python': { emoji: '🐍', label: 'Python', cls: 'lang-python' },
+            'javascript': { emoji: '🟨', label: 'JavaScript', cls: 'lang-javascript' },
+            'typescript': { emoji: '🔷', label: 'TypeScript', cls: 'lang-typescript' },
+            'ruby': { emoji: '💎', label: 'Ruby', cls: 'lang-ruby' },
+            'php': { emoji: '🐘', label: 'PHP', cls: 'lang-php' },
+        };
+        const info = langMap[lang] || { emoji: '📄', label: lang || 'Unknown', cls: 'lang-unknown' };
+        return `<span class="lang-badge ${info.cls}">${info.emoji} ${info.label}</span>`;
+    }
+
     function renderProjects(projects) {
         projectsList.innerHTML = '';
         projects.forEach(project => {
@@ -129,7 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
             item.innerHTML = `
                 <div class="project-icon">${icon}</div>
                 <div class="project-info">
-                    <div class="project-name">${project.name}</div>
+                    <div class="project-name">${project.name} ${getLanguageBadge(project.language)}</div>
                     ${project.target_folder ? `<span class="project-meta" title="${project.target_folder}">${project.target_folder}</span>` : ''}
                 </div>
                 ${project.target_folder ? `
@@ -207,6 +219,10 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Clear previous stats
         document.getElementById('detail-stats').innerHTML = `
+            <div class="detail-stat-item">
+                <label>Language</label>
+                <span>${getLanguageBadge(project.language)}</span>
+            </div>
             <div class="detail-stat-item">
                 <label>Folder</label>
                 <span title="${project.target_folder}">${project.target_folder ? 'Selected ✓' : 'None'}</span>

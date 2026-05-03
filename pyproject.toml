@@ -24,6 +24,7 @@ dependencies = [
     "numpy>=2.4.4",
     "fastapi>=0.110.0",
     "uvicorn>=0.29.0",
+    "tree-sitter-language-pack>=0.7.0",
 ]
 
 [project.scripts]
@@ -120,6 +121,8 @@ module = [
     "elasticsearch.*",
     "elastic_transport.*",
     "pyan.*",
+    "tree_sitter.*",
+    "tree_sitter_language_pack.*",
 ]
 ignore_missing_imports = true
 ignore_errors          = true

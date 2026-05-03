@@ -62,10 +62,16 @@ def get_projects() -> dict[str, Any]:
             driver.session() as session,
         ):
             result = session.run(
-                "MATCH (p:Project) RETURN p.name AS name, p.target_folder AS target_folder"
+                "MATCH (p:Project) "
+                "RETURN p.name AS name, p.target_folder AS target_folder, "
+                "p.language AS language"
             )
             projects = [
-                {"name": record["name"], "target_folder": record.get("target_folder")}
+                {
+                    "name": record["name"],
+                    "target_folder": record.get("target_folder"),
+                    "language": record.get("language", "python"),
+                }
                 for record in result
             ]
             return {"status": "success", "projects": projects}
@@ -112,18 +118,36 @@ def scan_project(req: ScanRequest) -> dict[str, Any]:
                 status_code=400, detail=f"Target folder does not exist: {req.target_folder}"
             )
 
-        graph_data = build_graph_data(req.project_name, req.target_folder)
-        if not graph_data:
+        result = build_graph_data(req.project_name, req.target_folder)
+        if not result:
             raise HTTPException(
-                status_code=400, detail="Failed to build graph data. No Python files found?"
+                status_code=400,
+                detail="Failed to build graph data. No source files found?",
             )
+
+        graph_data, detected_language = result
 
         write_cypher_file(graph_data, "import_neo4j.cypher")
         push_to_neo4j(graph_data, req.target_folder)
 
+        # Store detected language on the Project node
+        try:
+            with (
+                GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD)) as driver,
+                driver.session() as session,
+            ):
+                session.run(
+                    "MATCH (p:Project {name: $name}) SET p.language = $language",
+                    name=req.project_name,
+                    language=detected_language,
+                )
+        except Exception:  # noqa: BLE001 — best effort, don't fail the scan
+            pass
+
         return {
             "status": "success",
             "message": f"Successfully scanned and pushed project '{req.project_name}'",
+            "language": detected_language,
             "stats": {
                 "nodes": len(graph_data.nodes),
                 "calls_edges": len(graph_data.calls_edges),

@@ -670,3 +670,54 @@ button:active {
     font-weight: 600;
     color: var(--text-primary);
 }
+
+/* Language Badges */
+.lang-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    vertical-align: middle;
+    margin-left: 0.4rem;
+}
+
+.lang-badge.lang-python {
+    background: rgba(55, 118, 171, 0.2);
+    color: #6db3f2;
+    border: 1px solid rgba(55, 118, 171, 0.3);
+}
+
+.lang-badge.lang-javascript {
+    background: rgba(247, 223, 30, 0.15);
+    color: #f7df1e;
+    border: 1px solid rgba(247, 223, 30, 0.25);
+}
+
+.lang-badge.lang-typescript {
+    background: rgba(49, 120, 198, 0.2);
+    color: #6db3f2;
+    border: 1px solid rgba(49, 120, 198, 0.3);
+}
+
+.lang-badge.lang-ruby {
+    background: rgba(204, 52, 45, 0.2);
+    color: #f47174;
+    border: 1px solid rgba(204, 52, 45, 0.3);
+}
+
+.lang-badge.lang-php {
+    background: rgba(119, 123, 179, 0.2);
+    color: #a5a9e2;
+    border: 1px solid rgba(119, 123, 179, 0.3);
+}
+
+.lang-badge.lang-unknown {
+    background: rgba(148, 163, 184, 0.15);
+    color: var(--text-secondary);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+}

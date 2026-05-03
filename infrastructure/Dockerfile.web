@@ -6,7 +6,7 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
 
-RUN pip install --no-cache-dir . neo4j pyan3
+RUN pip install --no-cache-dir . neo4j pyan3 tree-sitter-language-pack
 
 EXPOSE 8001
 

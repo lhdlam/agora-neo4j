@@ -363,31 +363,50 @@ def _extract_call_edges(py_files: list[str], graph: GraphData) -> None:
 # ==========================================
 
 
-def build_graph_data(project_name: str, target_folder: str) -> GraphData | None:
+def build_graph_data(
+    project_name: str,
+    target_folder: str,
+    language: str | None = None,
+) -> tuple[GraphData, str] | None:
     """
-    Analyze the Python project and build a rich source-code knowledge graph.
+    Analyze a source code project and build a rich knowledge graph.
 
-    Combines AST analysis (metadata, imports, inheritance) with pyan3 call graph
-    analysis (CALLS edges) to produce a fully enriched GraphData object.
+    Auto-detects the programming language (Python, JS/TS, Ruby, PHP) unless
+    explicitly provided. Delegates to the appropriate language analyzer.
     """
+    from src.analyzers import detect_language, get_analyzer
+
     root = Path(target_folder)
-    py_files = [p for p in root.rglob("*.py") if p.name != "__init__.py"]
 
-    if not py_files:
-        logger.error("No .py files found in '%s'.", target_folder)
+    # Auto-detect language if not provided
+    if language is None:
+        language = detect_language(target_folder)
+
+    logger.info("Detected language: %s", language)
+    analyzer = get_analyzer(language)
+
+    # Find source files using the analyzer's logic
+    source_files = analyzer.find_files(root)
+
+    if not source_files:
+        logger.error("No %s files found in '%s'.", language, target_folder)
         return None
 
     graph = GraphData(project_name=project_name)
 
-    logger.info("STEP 1: Extracting AST metadata from %d Python files...", len(py_files))
-    for filepath in sorted(py_files):
-        _parse_file_ast(filepath, root, graph)
+    logger.info(
+        "STEP 1: Extracting AST metadata from %d %s files...",
+        len(source_files),
+        language,
+    )
+    for filepath in source_files:
+        analyzer.parse_file(filepath, root, graph)
 
     logger.info("STEP 2: Resolving inheritance edges to fully-qualified names...")
     _resolve_inheritance(graph)
 
-    logger.info("STEP 3: Extracting call graph with pyan3...")
-    _extract_call_edges([str(p) for p in py_files], graph)
+    logger.info("STEP 3: Extracting call graph...")
+    analyzer.extract_call_edges(source_files, graph)
 
     logger.info(
         "Extraction complete — nodes: %d | CALLS: %d | IMPORTS: %d | "
@@ -399,7 +418,7 @@ def build_graph_data(project_name: str, target_folder: str) -> GraphData | None:
         len(graph.implements_edges),
         len(graph.defined_in_edges),
     )
-    return graph
+    return graph, language
 
 
 # ==========================================
@@ -612,17 +631,23 @@ def push_to_neo4j(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Build and push Neo4j knowledge graph for Python source code."
+        description="Build and push Neo4j knowledge graph for source code."
     )
     parser.add_argument("--project", required=True, help="Name of the project")
+    parser.add_argument("--target", required=True, help="Target folder containing source code")
     parser.add_argument(
-        "--target", required=True, help="Target folder containing Python source code"
+        "--language",
+        choices=["python", "javascript", "typescript", "ruby", "php"],
+        default=None,
+        help="Programming language (auto-detected if not specified)",
     )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    graph_data = build_graph_data(args.project, args.target)
-    if graph_data:
+    result = build_graph_data(args.project, args.target, language=args.language)
+    if result:
+        graph_data, detected_lang = result
+        logger.info("Language: %s", detected_lang)
         write_cypher_file(graph_data, OUTPUT_CYPHER_FILE)
         push_to_neo4j(graph_data, args.target)
 
