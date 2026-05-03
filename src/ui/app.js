@@ -6,11 +6,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusMessage = document.getElementById('status-message');
     const projectsList = document.getElementById('projects-list');
     const refreshBtn = document.getElementById('refresh-btn');
+    const projectDetailModal = document.getElementById('project-detail-modal');
+    const closeDetailBtns = document.querySelectorAll('.close-detail-modal');
+    const editProjectName = document.getElementById('edit-project-name');
+    const editTargetFolder = document.getElementById('edit-target-folder');
+    const saveProjectBtn = document.getElementById('save-project-btn');
+    const deleteProjectBtn = document.getElementById('delete-project-btn');
+    const browseEditBtn = document.getElementById('browse-edit-btn');
+    
+    let currentEditingProjectName = null;
 
     // Fetch initial projects
     fetchProjects();
 
     refreshBtn.addEventListener('click', fetchProjects);
+
+    closeDetailBtns.forEach(btn => btn.addEventListener('click', () => {
+        projectDetailModal.style.display = 'none';
+    }));
+
+    saveProjectBtn.addEventListener('click', saveProject);
+    deleteProjectBtn.addEventListener('click', deleteProject);
+    browseEditBtn.addEventListener('click', () => {
+        folderModal.style.display = 'flex';
+        // Reuse the folder picker logic, but target the edit input
+        targetFolderInputToUpdate = editTargetFolder;
+        loadFolder(editTargetFolder.value || "/Users/lammor/Documents");
+    });
 
     scanForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -120,11 +142,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 ` : ''}
             `;
             
-            // Clicking a project could pre-fill the form
+            // Clicking a project opens the detail modal
             item.addEventListener('click', (e) => {
-                if(e.target.closest('.re-scan-btn') || e.target.closest('.view-graph-btn')) return; // ignore clicks on buttons
-                document.getElementById('project-name').value = project.name;
-                if(project.target_folder) document.getElementById('target-folder').value = project.target_folder;
+                if(e.target.closest('.re-scan-btn') || e.target.closest('.view-graph-btn')) return;
+                openProjectDetailModal(project);
             });
 
             const reScanBtn = item.querySelector('.re-scan-btn');
@@ -178,6 +199,91 @@ document.addEventListener('DOMContentLoaded', () => {
         statusMessage.style.display = 'none';
     }
 
+    function openProjectDetailModal(project) {
+        currentEditingProjectName = project.name;
+        editProjectName.value = project.name;
+        editTargetFolder.value = project.target_folder || '';
+        document.getElementById('detail-title').textContent = `Manage Project: ${project.name}`;
+        
+        // Clear previous stats
+        document.getElementById('detail-stats').innerHTML = `
+            <div class="detail-stat-item">
+                <label>Folder</label>
+                <span title="${project.target_folder}">${project.target_folder ? 'Selected ✓' : 'None'}</span>
+            </div>
+            <div class="detail-stat-item">
+                <label>Status</label>
+                <span>Ready</span>
+            </div>
+        `;
+        
+        projectDetailModal.style.display = 'flex';
+    }
+
+    async function saveProject() {
+        if (!currentEditingProjectName) return;
+        
+        const newName = editProjectName.value.trim();
+        const folder = editTargetFolder.value.trim();
+        
+        if (!newName) {
+            alert('Project name cannot be empty');
+            return;
+        }
+
+        saveProjectBtn.disabled = true;
+        saveProjectBtn.textContent = 'Saving...';
+
+        try {
+            const response = await fetch(`/api/projects/${encodeURIComponent(currentEditingProjectName)}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ new_name: newName, target_folder: folder })
+            });
+
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || 'Failed to update project');
+
+            showMessage(`<strong>Success!</strong> Project updated.`, 'success');
+            projectDetailModal.style.display = 'none';
+            fetchProjects();
+        } catch (error) {
+            alert(`Error: ${error.message}`);
+        } finally {
+            saveProjectBtn.disabled = false;
+            saveProjectBtn.textContent = 'Save Changes';
+        }
+    }
+
+    async function deleteProject() {
+        if (!currentEditingProjectName) return;
+        
+        if (!confirm(`Are you sure you want to delete project "${currentEditingProjectName}" and ALL its components from Neo4j? This cannot be undone.`)) {
+            return;
+        }
+
+        deleteProjectBtn.disabled = true;
+        deleteProjectBtn.textContent = 'Deleting...';
+
+        try {
+            const response = await fetch(`/api/projects/${encodeURIComponent(currentEditingProjectName)}`, {
+                method: 'DELETE'
+            });
+
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || 'Failed to delete project');
+
+            showMessage(`<strong>Success!</strong> Project deleted.`, 'success');
+            projectDetailModal.style.display = 'none';
+            fetchProjects();
+        } catch (error) {
+            alert(`Error: ${error.message}`);
+        } finally {
+            deleteProjectBtn.disabled = false;
+            deleteProjectBtn.textContent = 'Delete Project';
+        }
+    }
+
     // --- Folder Picker Logic ---
     const browseBtn = document.getElementById('browse-btn');
     const folderModal = document.getElementById('folder-modal');
@@ -188,9 +294,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const targetFolderInput = document.getElementById('target-folder');
     
     let currentSelectedPath = "";
+    let targetFolderInputToUpdate = targetFolderInput; // Default to the scan form input
 
     browseBtn.addEventListener('click', () => {
         folderModal.style.display = 'flex';
+        targetFolderInputToUpdate = targetFolderInput;
         let initialPath = targetFolderInput.value || "/Users/lammor/Documents";
         loadFolder(initialPath);
     });
@@ -201,7 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     selectFolderBtn.addEventListener('click', () => {
         if (currentSelectedPath) {
-            targetFolderInput.value = currentSelectedPath;
+            targetFolderInputToUpdate.value = currentSelectedPath;
         }
         folderModal.style.display = 'none';
     });

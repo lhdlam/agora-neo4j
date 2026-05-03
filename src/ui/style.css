@@ -617,3 +617,56 @@ button:active {
     background: rgba(0,0,0,0.2);
     border-radius: 6px;
 }
+.danger-btn {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--error);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    width: auto;
+}
+
+.danger-btn:hover {
+    background: var(--error);
+    color: white;
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
+.modal-body {
+    padding: 1rem 0;
+}
+
+.spacer {
+    flex-grow: 1;
+}
+
+.project-actions {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--card-border);
+}
+
+.detail-stats {
+    margin-top: 1.5rem;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+}
+
+.detail-stat-item {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 0.75rem;
+    border-radius: 8px;
+    border: 1px solid var(--card-border);
+}
+
+.detail-stat-item label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.25rem;
+}
+
+.detail-stat-item span {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}

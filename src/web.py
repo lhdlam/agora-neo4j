@@ -32,6 +32,11 @@ class ScanRequest(BaseModel):
     target_folder: str
 
 
+class ProjectUpdateRequest(BaseModel):
+    new_name: str | None = None
+    target_folder: str | None = None
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     yield
@@ -190,5 +195,80 @@ def get_project_graph(project_name: str, limit: int = 500) -> dict[str, Any]:
                 )
 
             return {"status": "success", "nodes": nodes, "edges": edges}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.patch("/api/projects/{project_name}")
+def update_project(project_name: str, req: ProjectUpdateRequest) -> dict[str, Any]:
+    try:
+        with (
+            GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD)) as driver,
+            driver.session() as session,
+        ):
+            # Update Project node
+            query = """
+            MATCH (p:Project {name: $project_name})
+            SET p.name = COALESCE($new_name, p.name),
+                p.target_folder = COALESCE($target_folder, p.target_folder)
+            RETURN p.name AS name
+            """
+            result = session.run(
+                query,
+                project_name=project_name,
+                new_name=req.new_name,
+                target_folder=req.target_folder,
+            )
+            record = result.single()
+            if not record:
+                raise HTTPException(status_code=404, detail=f"Project '{project_name}' not found")
+
+            # Update associated components if name changed
+            if req.new_name and req.new_name != project_name:
+                session.run(
+                    "MATCH (c:Component {project: $project_name}) SET c.project = $new_name",
+                    project_name=project_name,
+                    new_name=req.new_name,
+                )
+
+            return {
+                "status": "success",
+                "message": f"Project '{project_name}' updated successfully",
+                "new_name": record["name"],
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.delete("/api/projects/{project_name}")
+def delete_project(project_name: str) -> dict[str, Any]:
+    try:
+        with (
+            GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD)) as driver,
+            driver.session() as session,
+        ):
+            # Delete Project node and all its components
+            query = """
+            MATCH (p:Project {name: $project_name})
+            OPTIONAL MATCH (c:Component {project: $project_name})
+            DETACH DELETE p, c
+            RETURN count(p) as deleted_count
+            """
+            result = session.run(query, project_name=project_name)
+            record = result.single()
+
+            if record and record["deleted_count"] == 0:
+                # If project node wasn't found, maybe only components exist (unlikely but safe)
+                session.run(
+                    "MATCH (c:Component {project: $project_name}) DETACH DELETE c",
+                    project_name=project_name,
+                )
+
+            return {
+                "status": "success",
+                "message": f"Project '{project_name}' and its components deleted successfully",
+            }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e

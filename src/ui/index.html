@@ -98,6 +98,38 @@
         </div>
     </div>
 
+    <!-- Project Detail Modal -->
+    <div id="project-detail-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content glass-card">
+            <div class="modal-header">
+                <h3 id="detail-title">Project Details</h3>
+                <button type="button" class="icon-btn close-detail-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="edit-project-name">Project Name</label>
+                    <input type="text" id="edit-project-name" placeholder="Project Name">
+                </div>
+                <div class="form-group">
+                    <label for="edit-target-folder">Source Path</label>
+                    <div class="input-with-button">
+                        <input type="text" id="edit-target-folder" placeholder="Source Path">
+                        <button type="button" id="browse-edit-btn" class="secondary-btn">Browse...</button>
+                    </div>
+                </div>
+                <div id="detail-stats" class="detail-stats">
+                    <!-- Stats will be injected here -->
+                </div>
+            </div>
+            <div class="modal-footer project-actions">
+                <button type="button" id="delete-project-btn" class="danger-btn">Delete Project</button>
+                <div class="spacer"></div>
+                <button type="button" class="secondary-btn close-detail-modal">Cancel</button>
+                <button type="button" id="save-project-btn" class="primary-btn">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/app.js"></script>
 </body>
 </html>
