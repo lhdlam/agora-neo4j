@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import ast
 from dataclasses import dataclass, field
 import logging
@@ -19,7 +20,6 @@ except ImportError:
 # ==========================================
 # CONFIGURATION
 # ==========================================
-TARGET_FOLDER = "/Users/lammor/Documents/MOR/numo_app/NUMO_Prototype/src"
 NEO4J_URI = f"bolt://{os.getenv('NEO4J_HOST', 'localhost')}:{os.getenv('NEO4J_PORT', '7687')}"
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
@@ -76,12 +76,14 @@ class ComponentNode:
     line_number: int  # Line where this component is defined
     docstring: str = ""  # First paragraph of the docstring
     signature: str = ""  # Human-readable function/method signature
+    project: str = ""  # The project this component belongs to
 
 
 @dataclass
 class GraphData:
     """Container for all extracted graph nodes and edges."""
 
+    project_name: str = ""
     nodes: dict[str, ComponentNode] = field(default_factory=dict)
     calls_edges: set[tuple[str, str]] = field(default_factory=set)
     imports_edges: set[tuple[str, str]] = field(default_factory=set)
@@ -209,6 +211,7 @@ def _process_class(
         source_file=source_file,
         line_number=class_node.lineno,
         docstring=_first_paragraph(ast.get_docstring(class_node) or ""),
+        project=graph.project_name,
     )
     graph.defined_in_edges.add((class_fqn, module_name))
     graph.belongs_to_layer_edges.add((class_fqn, layer))
@@ -233,6 +236,7 @@ def _process_class(
                 line_number=item.lineno,
                 docstring=_first_paragraph(ast.get_docstring(item) or ""),
                 signature=_extract_signature(item),
+                project=graph.project_name,
             )
             graph.defined_in_edges.add((method_fqn, class_fqn))
             graph.belongs_to_layer_edges.add((method_fqn, layer))
@@ -259,6 +263,7 @@ def _parse_file_ast(filepath: Path, root: Path, graph: GraphData) -> None:
         source_file=source_file,
         line_number=1,
         docstring=_first_paragraph(ast.get_docstring(tree) or ""),
+        project=graph.project_name,
     )
     graph.belongs_to_layer_edges.add((module_name, layer))
 
@@ -294,6 +299,7 @@ def _parse_file_ast(filepath: Path, root: Path, graph: GraphData) -> None:
                 line_number=node.lineno,
                 docstring=_first_paragraph(ast.get_docstring(node) or ""),
                 signature=_extract_signature(node),
+                project=graph.project_name,
             )
             graph.defined_in_edges.add((func_fqn, module_name))
             graph.belongs_to_layer_edges.add((func_fqn, layer))
@@ -357,7 +363,7 @@ def _extract_call_edges(py_files: list[str], graph: GraphData) -> None:
 # ==========================================
 
 
-def build_graph_data(target_folder: str) -> GraphData | None:
+def build_graph_data(project_name: str, target_folder: str) -> GraphData | None:
     """
     Analyze the Python project and build a rich source-code knowledge graph.
 
@@ -371,7 +377,7 @@ def build_graph_data(target_folder: str) -> GraphData | None:
         logger.error("No .py files found in '%s'.", target_folder)
         return None
 
-    graph = GraphData()
+    graph = GraphData(project_name=project_name)
 
     logger.info("STEP 1: Extracting AST metadata from %d Python files...", len(py_files))
     for filepath in sorted(py_files):
@@ -414,9 +420,15 @@ def write_cypher_file(graph: GraphData, output_file: str) -> None:
         """Append relationship Cypher statements to the lines buffer."""
         lines.append(f"// --- {label} RELATIONSHIPS ---\n")
         for src, dst in sorted(edges):
+            project_dst = (
+                f", project: '{_escape_cypher(graph.project_name)}'"
+                if target_label == "Component"
+                else ""
+            )
             lines.append(
-                f"MATCH (a:Component {{name: '{_escape_cypher(src)}'}}), "
-                f"(b:{target_label} {{name: '{_escape_cypher(dst)}'}})\n"
+                f"MATCH (a:Component {{name: '{_escape_cypher(src)}', "
+                f"project: '{_escape_cypher(graph.project_name)}'}}), "
+                f"(b:{target_label} {{name: '{_escape_cypher(dst)}'{project_dst}}})\n"
                 f"MERGE (a)-[:{label}]->(b);\n"
             )
         lines.append("\n")
@@ -425,8 +437,15 @@ def write_cypher_file(graph: GraphData, output_file: str) -> None:
     lines.append("// ================================================================\n")
     lines.append("// AGORA SOURCE CODE KNOWLEDGE GRAPH — CYPHER IMPORT SCRIPT\n")
     lines.append("// ================================================================\n\n")
-    lines.append("// Uncomment below to wipe existing data before re-import:\n")
-    lines.append("// MATCH (n) DETACH DELETE n;\n\n")
+    lines.append("// Uncomment below to wipe existing data for this project before re-import:\n")
+    lines.append(
+        f"// MATCH (n:Component {{project: '{_escape_cypher(graph.project_name)}'}}) "
+        "DETACH DELETE n;\n\n"
+    )
+
+    # 0. Project node
+    lines.append("// --- PROJECT NODE ---\n")
+    lines.append(f"MERGE (p:Project {{name: '{_escape_cypher(graph.project_name)}'}});\n\n")
 
     # 1. Layer nodes
     lines.append("// --- LAYER NODES ---\n")
@@ -437,10 +456,13 @@ def write_cypher_file(graph: GraphData, output_file: str) -> None:
         )
     lines.append("\n")
 
-    # 2. Component nodes — MERGE on name, SET all metadata properties
+    # 2. Component nodes — MERGE on name and project, SET all metadata properties
     lines.append("// --- COMPONENT NODES ---\n")
     for node in sorted(graph.nodes.values(), key=lambda n: n.name):
-        lines.append(f"MERGE (n:Component {{name: '{_escape_cypher(node.name)}'}})\n")
+        lines.append(
+            f"MERGE (n:Component {{name: '{_escape_cypher(node.name)}', "
+            f"project: '{_escape_cypher(node.project)}'}})\n"
+        )
         lines.append(
             f"  SET n.kind = '{_escape_cypher(node.kind)}', "
             f"n.module = '{_escape_cypher(node.module)}', "
@@ -460,6 +482,16 @@ def write_cypher_file(graph: GraphData, output_file: str) -> None:
     _write_edge_block(lines, "DEFINED_IN", graph.defined_in_edges)
     _write_edge_block(lines, "BELONGS_TO_LAYER", graph.belongs_to_layer_edges, target_label="Layer")
 
+    lines.append("// --- BELONGS_TO_PROJECT RELATIONSHIPS ---\n")
+    for node in sorted(graph.nodes.values(), key=lambda n: n.name):
+        lines.append(
+            f"MATCH (n:Component {{name: '{_escape_cypher(node.name)}', "
+            f"project: '{_escape_cypher(node.project)}'}}), "
+            f"(p:Project {{name: '{_escape_cypher(node.project)}'}})\n"
+            f"MERGE (n)-[:BELONGS_TO_PROJECT]->(p);\n"
+        )
+    lines.append("\n")
+
     output_path.write_text("".join(lines), encoding="utf-8")
     logger.info("Cypher script written to %s.", output_file)
 
@@ -471,6 +503,7 @@ def write_cypher_file(graph: GraphData, output_file: str) -> None:
 
 def push_to_neo4j(
     graph: GraphData,
+    target_folder: str,
     *,
     uri: str = NEO4J_URI,
     user: str = NEO4J_USER,
@@ -480,9 +513,19 @@ def push_to_neo4j(
     logger.info("Connecting to Neo4j at %s ...", uri)
 
     with GraphDatabase.driver(uri, auth=(user, password)) as driver, driver.session() as session:
-        # Clear all existing data before re-import
-        session.run("MATCH (n) DETACH DELETE n")
-        logger.info("Cleared existing graph data.")
+        # Clear all existing data for this project before re-import
+        session.run(
+            "MATCH (n:Component {project: $project}) DETACH DELETE n", project=graph.project_name
+        )
+        logger.info("Cleared existing graph data for project: %s.", graph.project_name)
+
+        # Create Project node
+        logger.info("Creating Project node for %s...", graph.project_name)
+        session.run(
+            "MERGE (p:Project {name: $name}) SET p.target_folder = $target_folder",
+            name=graph.project_name,
+            target_folder=target_folder,
+        )
 
         # Create Layer nodes
         logger.info("Creating %d Layer nodes...", len(LAYER_DESCRIPTIONS))
@@ -498,7 +541,7 @@ def push_to_neo4j(
         for node in graph.nodes.values():
             session.run(
                 """
-                    MERGE (n:Component {name: $name})
+                    MERGE (n:Component {name: $name, project: $project})
                     SET n.kind        = $kind,
                         n.module      = $module,
                         n.layer       = $layer,
@@ -508,6 +551,7 @@ def push_to_neo4j(
                         n.signature   = $signature
                     """,
                 name=node.name,
+                project=node.project,
                 kind=node.kind,
                 module=node.module,
                 layer=node.layer,
@@ -525,19 +569,34 @@ def push_to_neo4j(
             """Push a batch of typed relationships into Neo4j."""
             logger.info("Creating %d %s edges...", len(edges), rel_type)
             # rel_type and target_label are internal constants — safe to interpolate
+            target_match = (
+                "{name: $dst, project: $project}" if target_label == "Component" else "{name: $dst}"
+            )
             query = (
-                f"MATCH (a:Component {{name: $src}}), (b:{target_label} {{name: $dst}}) "
+                f"MATCH (a:Component {{name: $src, project: $project}}), "
+                f"(b:{target_label} {target_match}) "
                 f"MERGE (a)-[:{rel_type}]->(b)"
             )
             for src, dst in edges:
-                session.run(query, src=src, dst=dst)
+                session.run(query, src=src, dst=dst, project=graph.project_name)
 
+        _write_edge_block = _push_edges  # Just mapping
         _push_edges("CALLS", graph.calls_edges)
         _push_edges("IMPORTS", graph.imports_edges)
         _push_edges("INHERITS", graph.inherits_edges)
         _push_edges("IMPLEMENTS", graph.implements_edges)
         _push_edges("DEFINED_IN", graph.defined_in_edges)
         _push_edges("BELONGS_TO_LAYER", graph.belongs_to_layer_edges, target_label="Layer")
+
+        logger.info("Creating BELONGS_TO_PROJECT edges...")
+        for node in graph.nodes.values():
+            session.run(
+                "MATCH (n:Component {name: $name, project: $project}), "
+                "(p:Project {name: $project}) "
+                "MERGE (n)-[:BELONGS_TO_PROJECT]->(p)",
+                name=node.name,
+                project=node.project,
+            )
 
     logger.info(
         "Push complete — nodes: %d | CALLS: %d | IMPORTS: %d | "
@@ -552,11 +611,20 @@ def push_to_neo4j(
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Build and push Neo4j knowledge graph for Python source code."
+    )
+    parser.add_argument("--project", required=True, help="Name of the project")
+    parser.add_argument(
+        "--target", required=True, help="Target folder containing Python source code"
+    )
+    args = parser.parse_args()
+
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    graph_data = build_graph_data(TARGET_FOLDER)
+    graph_data = build_graph_data(args.project, args.target)
     if graph_data:
         write_cypher_file(graph_data, OUTPUT_CYPHER_FILE)
-        push_to_neo4j(graph_data)
+        push_to_neo4j(graph_data, args.target)
 
 
 # ==========================================

@@ -1,0 +1,14 @@
+services:
+  agora-web:
+    build:
+      context: ..
+      dockerfile: infrastructure/Dockerfile.web
+    ports:
+      - "8001:8001"
+    environment:
+      # Use host.docker.internal to reach neo4j running on the host machine
+      - NEO4J_HOST=host.docker.internal
+      - NEO4J_PORT=7687
+    volumes:
+      # Mount the entire Documents folder to allow scanning local projects
+      - /Users/lammor/Documents:/Users/lammor/Documents

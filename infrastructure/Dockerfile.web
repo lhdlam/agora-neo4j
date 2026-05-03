@@ -1,0 +1,13 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# Install dependencies from pyproject.toml
+COPY pyproject.toml README.md ./
+COPY src/ ./src/
+
+RUN pip install --no-cache-dir . neo4j pyan3
+
+EXPOSE 8001
+
+CMD ["uvicorn", "src.web:app", "--host", "0.0.0.0", "--port", "8001"]

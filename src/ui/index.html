@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agora - Neo4j Graph Manager</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="background-elements">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1>Neo4j Graph Manager</h1>
+            <p>Analyze and push Python source code to your Neo4j knowledge graph.</p>
+        </header>
+
+        <main>
+            <div class="glass-card form-section">
+                <h2>Scan New Project</h2>
+                <form id="scan-form">
+                    <div class="form-group">
+                        <label for="project-name">Project Name</label>
+                        <input type="text" id="project-name" name="project_name" placeholder="e.g. agora" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="target-folder">Source Path (Absolute)</label>
+                        <div class="input-with-button">
+                            <input type="text" id="target-folder" name="target_folder" placeholder="e.g. /Users/username/project/src" required>
+                            <button type="button" id="browse-btn" class="secondary-btn">Browse...</button>
+                        </div>
+                    </div>
+
+                    <button type="submit" id="scan-btn">
+                        <span class="btn-text">Scan & Push to Neo4j</span>
+                        <div class="spinner" id="btn-spinner" style="display: none;"></div>
+                    </button>
+                </form>
+                <div id="status-message" class="message" style="display: none;"></div>
+            </div>
+
+            <div class="glass-card list-section">
+                <div class="list-header">
+                    <h2>Existing Projects</h2>
+                    <button id="refresh-btn" class="icon-btn" title="Refresh">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                    </button>
+                </div>
+                <div id="projects-list" class="projects-grid">
+                    <div class="loading-text">Loading projects...</div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Folder Picker Modal -->
+    <div id="folder-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content glass-card">
+            <div class="modal-header">
+                <h3>Select Folder</h3>
+                <button type="button" class="icon-btn close-modal">&times;</button>
+            </div>
+            <div class="current-path" id="current-path-display">/Users/lammor/Documents</div>
+            <div class="folder-list" id="folder-list">
+                <div class="loading-text">Loading folders...</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="secondary-btn close-modal">Cancel</button>
+                <button type="button" id="select-folder-btn" class="primary-btn">Select This Folder</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Graph Viewer Modal -->
+    <div id="graph-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content graph-content glass-card">
+            <div class="modal-header">
+                <h3 id="graph-title">Project Graph</h3>
+                <button type="button" class="icon-btn close-graph-modal">&times;</button>
+            </div>
+            <div class="graph-layout">
+                <div id="graph-container" class="graph-container">
+                    <div class="loading-text" id="graph-loading">Loading graph data...</div>
+                </div>
+                <div class="graph-panel">
+                    <h4>Node Details</h4>
+                    <div id="node-details">
+                        <p class="empty-text">Click a node to see details</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

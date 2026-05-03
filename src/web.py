@@ -1,0 +1,194 @@
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+import contextlib
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from src.neo4j_graph import (
+    NEO4J_PASSWORD,
+    NEO4J_URI,
+    NEO4J_USER,
+    build_graph_data,
+    push_to_neo4j,
+    write_cypher_file,
+)
+
+if TYPE_CHECKING:
+    from neo4j import GraphDatabase
+
+with contextlib.suppress(ImportError):
+    from neo4j import GraphDatabase
+
+
+class ScanRequest(BaseModel):
+    project_name: str
+    target_folder: str
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+
+# Mount static files
+ui_dir = Path(__file__).parent / "ui"
+app.mount("/static", StaticFiles(directory=str(ui_dir)), name="static")
+
+
+@app.get("/")
+def read_root() -> FileResponse:
+    return FileResponse(ui_dir / "index.html")
+
+
+@app.get("/api/projects")
+def get_projects() -> dict[str, Any]:
+    try:
+        with (
+            GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD)) as driver,
+            driver.session() as session,
+        ):
+            result = session.run(
+                "MATCH (p:Project) RETURN p.name AS name, p.target_folder AS target_folder"
+            )
+            projects = [
+                {"name": record["name"], "target_folder": record.get("target_folder")}
+                for record in result
+            ]
+            return {"status": "success", "projects": projects}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.get("/api/fs")
+def get_fs(path: str = "/Users/lammor/Documents") -> dict[str, Any]:
+    try:
+        # Security check: only allow browsing within /Users/lammor/Documents
+        base_path = Path("/Users/lammor/Documents")
+        abs_path = Path(path).resolve()
+        if not str(abs_path).startswith(str(base_path)):
+            abs_path = base_path
+
+        if not abs_path.exists() or not abs_path.is_dir():
+            raise HTTPException(status_code=400, detail="Invalid path")
+
+        folders = []
+        for item in abs_path.iterdir():
+            # Skip hidden files and non-directories
+            if not item.name.startswith(".") and item.is_dir():
+                folders.append({"name": item.name, "path": str(item)})
+
+        # Sort folders alphabetically
+        folders.sort(key=lambda x: x["name"].lower())
+
+        return {
+            "status": "success",
+            "current_path": str(abs_path),
+            "parent_path": str(abs_path.parent) if abs_path != base_path else None,
+            "folders": folders,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.post("/api/scan")
+def scan_project(req: ScanRequest) -> dict[str, Any]:
+    try:
+        if not Path(req.target_folder).exists():
+            raise HTTPException(
+                status_code=400, detail=f"Target folder does not exist: {req.target_folder}"
+            )
+
+        graph_data = build_graph_data(req.project_name, req.target_folder)
+        if not graph_data:
+            raise HTTPException(
+                status_code=400, detail="Failed to build graph data. No Python files found?"
+            )
+
+        write_cypher_file(graph_data, "import_neo4j.cypher")
+        push_to_neo4j(graph_data, req.target_folder)
+
+        return {
+            "status": "success",
+            "message": f"Successfully scanned and pushed project '{req.project_name}'",
+            "stats": {
+                "nodes": len(graph_data.nodes),
+                "calls_edges": len(graph_data.calls_edges),
+                "imports_edges": len(graph_data.imports_edges),
+                "inherits_edges": len(graph_data.inherits_edges),
+                "implements_edges": len(graph_data.implements_edges),
+                "defined_in_edges": len(graph_data.defined_in_edges),
+            },
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.get("/api/projects/{project_name}/graph")
+def get_project_graph(project_name: str, limit: int = 500) -> dict[str, Any]:
+    try:
+        with (
+            GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD)) as driver,
+            driver.session() as session,
+        ):
+            nodes_query = """
+            MATCH (n:Component {project: $project_name})
+            RETURN id(n) AS id, labels(n) AS labels, n AS properties
+            LIMIT $limit
+            """
+            nodes_result = session.run(nodes_query, project_name=project_name, limit=limit)
+
+            nodes = []
+            node_ids = set()
+            for record in nodes_result:
+                node_id = record["id"]
+                node_ids.add(node_id)
+                props = dict(record["properties"])
+                label = props.get("name", "Unknown")
+                if "." in label:
+                    label = label.split(".")[-1]
+
+                nodes.append(
+                    {
+                        "id": node_id,
+                        "label": label,
+                        "full_name": props.get("name", ""),
+                        "kind": props.get("kind", ""),
+                        "layer": props.get("layer", ""),
+                        "type": record["labels"][0] if record["labels"] else "Node",
+                        "properties": props,
+                    }
+                )
+
+            edges_query = """
+            MATCH (n:Component {project: $project_name})-[r]->(m:Component {project: $project_name})
+            WHERE id(n) IN $node_ids AND id(m) IN $node_ids
+            RETURN id(n) AS source, id(m) AS target, type(r) AS type, id(r) AS id
+            """
+            edges_result = session.run(
+                edges_query, project_name=project_name, node_ids=list(node_ids)
+            )
+
+            edges = []
+            for record in edges_result:
+                edges.append(
+                    {
+                        "id": record["id"],
+                        "from": record["source"],
+                        "to": record["target"],
+                        "label": record["type"],
+                        "type": record["type"],
+                    }
+                )
+
+            return {"status": "success", "nodes": nodes, "edges": edges}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
