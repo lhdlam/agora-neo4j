@@ -15,6 +15,7 @@ from src.neo4j_graph import (
     NEO4J_PASSWORD,
     NEO4J_URI,
     NEO4J_USER,
+    WORKSPACE_BASE_PATH,
     build_graph_data,
     push_to_neo4j,
     write_cypher_file,
@@ -79,11 +80,22 @@ def get_projects() -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
+@app.get("/api/config")
+def get_config() -> dict[str, Any]:
+    return {
+        "status": "success",
+        "workspace_base_path": WORKSPACE_BASE_PATH,
+    }
+
+
 @app.get("/api/fs")
-def get_fs(path: str = "/Users/lammor/Documents") -> dict[str, Any]:
+def get_fs(path: str | None = None) -> dict[str, Any]:
     try:
-        # Security check: only allow browsing within /Users/lammor/Documents
-        base_path = Path("/Users/lammor/Documents")
+        if path is None:
+            path = WORKSPACE_BASE_PATH
+
+        # Security check: only allow browsing within WORKSPACE_BASE_PATH
+        base_path = Path(WORKSPACE_BASE_PATH)
         abs_path = Path(path).resolve()
         if not str(abs_path).startswith(str(base_path)):
             abs_path = base_path

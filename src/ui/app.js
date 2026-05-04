@@ -15,9 +15,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const browseEditBtn = document.getElementById('browse-edit-btn');
     
     let currentEditingProjectName = null;
+    let appConfig = { workspace_base_path: "/Users/lammor/Documents" };
 
-    // Fetch initial projects
-    fetchProjects();
+    // Fetch config and projects
+    async function init() {
+        try {
+            const response = await fetch('/api/config');
+            const data = await response.json();
+            if (response.ok) {
+                appConfig = data;
+            }
+        } catch (err) {
+            console.error("Failed to fetch config", err);
+        }
+        fetchProjects();
+    }
+    
+    init();
 
     refreshBtn.addEventListener('click', fetchProjects);
 
@@ -31,7 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
         folderModal.style.display = 'flex';
         // Reuse the folder picker logic, but target the edit input
         targetFolderInputToUpdate = editTargetFolder;
-        loadFolder(editTargetFolder.value || "/Users/lammor/Documents");
+        loadFolder(editTargetFolder.value || appConfig.workspace_base_path);
     });
 
     scanForm.addEventListener('submit', async (e) => {
@@ -315,7 +329,7 @@ document.addEventListener('DOMContentLoaded', () => {
     browseBtn.addEventListener('click', () => {
         folderModal.style.display = 'flex';
         targetFolderInputToUpdate = targetFolderInput;
-        let initialPath = targetFolderInput.value || "/Users/lammor/Documents";
+        let initialPath = targetFolderInput.value || appConfig.workspace_base_path;
         loadFolder(initialPath);
     });
 
