@@ -3,14 +3,21 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 import contextlib
 from contextlib import asynccontextmanager
+import logging
+import os
 from pathlib import Path
+import tempfile
 from typing import TYPE_CHECKING, Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from src.analyzers.document_models import AnalysisResult, MultiDocumentResult
+from src.analyzers.document_parser import SUPPORTED_EXTENSIONS, parse_document
+from src.analyzers.report_generator import generate_combined_report, generate_report
+from src.analyzers.task_bug_analyzer import analyze_document
 from src.neo4j_graph import (
     NEO4J_PASSWORD,
     NEO4J_URI,
@@ -26,6 +33,10 @@ if TYPE_CHECKING:
 
 with contextlib.suppress(ImportError):
     from neo4j import GraphDatabase
+
+from dotenv import load_dotenv
+
+load_dotenv()  # Load .env for AI API keys etc.
 
 
 class ScanRequest(BaseModel):
@@ -308,3 +319,285 @@ def delete_project(project_name: str) -> dict[str, Any]:
             }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# ── Document Analyzer ─────────────────────────────────────────────────────────
+
+logger = logging.getLogger(__name__)
+
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_FILES = 5
+
+
+@app.post("/api/analyze")
+async def analyze_documents(
+    files: list[UploadFile],
+) -> dict[str, Any]:
+    """Upload document(s) and receive structured task/bug analysis.
+
+    Accepts: .docx, .txt, .md, .png, .jpg, .jpeg, .bmp, .tiff, .webp
+    Returns: Markdown report + structured JSON data
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+
+    if len(files) > MAX_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Too many files. Maximum {MAX_FILES} files allowed.",
+        )
+
+    results: list[dict[str, Any]] = []
+    analysis_results = []
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+
+        for upload_file in files:
+            filename = upload_file.filename or "unknown"
+            suffix = Path(filename).suffix.lower()
+
+            # Validate file extension
+            if suffix not in SUPPORTED_EXTENSIONS:
+                results.append(
+                    {
+                        "filename": filename,
+                        "status": "error",
+                        "error": f"Unsupported file type: {suffix}. "
+                        f"Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}",
+                    }
+                )
+                continue
+
+            # Read and validate file size
+            content = await upload_file.read()
+            if len(content) > MAX_FILE_SIZE:
+                results.append(
+                    {
+                        "filename": filename,
+                        "status": "error",
+                        "error": (
+                            f"File too large ({len(content)} bytes). Max: {MAX_FILE_SIZE} bytes."
+                        ),
+                    }
+                )
+                continue
+
+            # Save to temp file
+            file_path = tmp_path / filename
+            file_path.write_bytes(content)
+
+            try:
+                # Parse document
+                parsed = parse_document(file_path)
+
+                # Analyze for tasks/bugs
+                analysis = analyze_document(parsed)
+
+                # Generate markdown report
+                markdown = generate_report(analysis)
+                analysis.markdown_report = markdown
+
+                analysis_results.append(analysis)
+
+                results.append(
+                    {
+                        "filename": filename,
+                        "status": "success",
+                        "file_type": parsed.file_type,
+                        "raw_text_length": len(parsed.raw_text),
+                        "items_found": len(analysis.items),
+                        "type_stats": analysis.type_stats,
+                        "severity_stats": analysis.severity_stats,
+                        "items": [
+                            {
+                                "type": item.item_type,
+                                "title": item.title,
+                                "severity": item.severity,
+                                "status": item.status,
+                                "tags": item.tags,
+                                "description": item.description,
+                            }
+                            for item in analysis.items
+                        ],
+                        "markdown": markdown,
+                    }
+                )
+
+            except Exception as e:  # noqa: BLE001 — per-file error handling
+                logger.exception("Failed to analyze %s", filename)
+                results.append(
+                    {
+                        "filename": filename,
+                        "status": "error",
+                        "error": str(e),
+                    }
+                )
+
+    # Generate combined report if multiple files
+    combined_markdown = ""
+    if len(analysis_results) > 1:
+        multi = MultiDocumentResult(
+            results=analysis_results,
+            total_items=sum(len(r.items) for r in analysis_results),
+        )
+        combined_markdown = generate_combined_report(multi)
+        multi.combined_markdown = combined_markdown
+    elif len(analysis_results) == 1:
+        combined_markdown = analysis_results[0].markdown_report
+
+    return {
+        "status": "success",
+        "total_files": len(files),
+        "processed": len([r for r in results if r.get("status") == "success"]),
+        "errors": len([r for r in results if r.get("status") == "error"]),
+        "results": results,
+        "combined_markdown": combined_markdown,
+    }
+
+
+class TextAnalyzeRequest(BaseModel):
+    """Request body for direct text analysis."""
+
+    text: str
+    filename: str = "text-input.txt"
+    engine: str = "rule"  # "rule" | "ai"
+    provider: str = "groq"  # "groq"
+    api_key: str = ""  # client-provided API key (takes priority over env)
+
+
+@app.post("/api/analyze-text")
+async def analyze_text(req: TextAnalyzeRequest) -> dict[str, Any]:
+    """Analyze raw text input using rule-based or AI engine."""
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="Text input is empty")
+
+    if len(req.text) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="Text too long")
+
+    try:
+        if req.engine == "ai":
+            return await _analyze_with_ai(req)
+        return await _analyze_with_rules(req)
+
+    except Exception as e:
+        logger.exception("Failed to analyze text input")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+async def _analyze_with_rules(req: TextAnalyzeRequest) -> dict[str, Any]:
+    """Analyze text using the rule-based engine."""
+    from src.analyzers.document_models import DocumentSection, ParsedDocument
+
+    sections: list[DocumentSection] = []
+    current_heading: str | None = None
+    current_lines: list[str] = []
+
+    for line in req.text.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            if current_lines:
+                sections.append(
+                    DocumentSection(
+                        heading=current_heading,
+                        content="\n".join(current_lines),
+                        level=0,
+                    )
+                )
+                current_lines = []
+            current_heading = stripped.lstrip("# ").strip()
+        else:
+            current_lines.append(line)
+
+    if current_lines:
+        sections.append(
+            DocumentSection(
+                heading=current_heading,
+                content="\n".join(current_lines),
+                level=0,
+            )
+        )
+
+    parsed = ParsedDocument(
+        filename=req.filename,
+        file_type="txt",
+        raw_text=req.text,
+        sections=sections,
+    )
+
+    analysis = analyze_document(parsed)
+    markdown = generate_report(analysis)
+    analysis.markdown_report = markdown
+
+    return _format_text_response(analysis, markdown)
+
+
+async def _analyze_with_ai(req: TextAnalyzeRequest) -> dict[str, Any]:
+    """Analyze text using AI (Groq)."""
+    from src.analyzers.ai_analyzer import AIAnalyzer
+
+    # Resolve API key: request > env
+    api_key = req.api_key or os.getenv("GROQ_API_KEY", "")
+
+    if not api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="API key cho Groq chưa được cấu hình. "
+            "Vui lòng nhập key trong phần cài đặt AI hoặc thiết lập biến môi trường.",
+        )
+
+    analyzer = AIAnalyzer(provider="groq", api_key=api_key)
+
+    try:
+        analysis = await analyzer.analyze(req.text, req.filename)
+    except RuntimeError as e:
+        # AI failed — fallback to rule-based with warning
+        logger.warning("AI analysis failed, falling back to rule-based: %s", e)
+        rule_result = await _analyze_with_rules(req)
+        rule_result["ai_fallback"] = True
+        rule_result["ai_error"] = str(e)
+        return rule_result
+
+    return _format_text_response(analysis, analysis.markdown_report)
+
+
+def _format_text_response(analysis: AnalysisResult, markdown: str) -> dict[str, Any]:
+    """Format analysis result as API response dict."""
+    return {
+        "status": "success",
+        "filename": analysis.filename,
+        "items_found": len(analysis.items),
+        "type_stats": analysis.type_stats,
+        "severity_stats": analysis.severity_stats,
+        "items": [
+            {
+                "type": item.item_type,
+                "title": item.title,
+                "severity": item.severity,
+                "status": item.status,
+                "tags": item.tags,
+                "description": item.description,
+                "location": item.location,
+                "scope": item.scope,
+                "expected_result": item.expected_result,
+            }
+            for item in analysis.items
+        ],
+        "markdown": markdown,
+    }
+
+
+@app.get("/api/ai-config")
+async def get_ai_config() -> dict[str, Any]:
+    """Return available AI providers based on configured API keys."""
+    groq_key = os.getenv("GROQ_API_KEY", "")
+
+    return {
+        "providers": {
+            "groq": {
+                "available": bool(groq_key),
+                "model": os.getenv("AI_MODEL_GROQ", "groq/compound"),
+            },
+        },
+        "default_provider": "groq",
+    }

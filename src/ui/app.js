@@ -597,6 +597,420 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         nodeDetails.innerHTML = html || '<p class="empty-text">No details available</p>';
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // Document Analyzer Logic
+    // ═══════════════════════════════════════════════════════════
+
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const uploadedFilesContainer = document.getElementById('uploaded-files');
+    const fileListEl = document.getElementById('file-list');
+    const clearFilesBtn = document.getElementById('clear-files-btn');
+    const analyzeBtn = document.getElementById('analyze-btn');
+    const analyzeBtnText = analyzeBtn.querySelector('.btn-text');
+    const analyzeSpinner = document.getElementById('analyze-spinner');
+    const analyzeStatus = document.getElementById('analyze-status');
+    const analysisResult = document.getElementById('analysis-result');
+    const resultStats = document.getElementById('result-stats');
+    const markdownPreview = document.getElementById('markdown-preview');
+    const copyMdBtn = document.getElementById('copy-md-btn');
+    const downloadMdBtn = document.getElementById('download-md-btn');
+
+    // Text input mode elements
+    const textInputMode = document.getElementById('text-input-mode');
+    const fileInputMode = document.getElementById('file-input-mode');
+    const textInput = document.getElementById('text-input');
+    const charCount = document.getElementById('char-count');
+    const clearTextBtn = document.getElementById('clear-text-btn');
+    const inputTabs = document.querySelectorAll('.input-tab');
+
+    let selectedFiles = [];
+    let lastMarkdown = '';
+    let currentMode = 'text'; // 'text' or 'file'
+
+    // ── Tab Switching ──
+    inputTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const mode = tab.dataset.mode;
+            if (mode === currentMode) return;
+            currentMode = mode;
+
+            inputTabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+
+            if (mode === 'text') {
+                textInputMode.style.display = 'block';
+                fileInputMode.style.display = 'none';
+            } else {
+                textInputMode.style.display = 'none';
+                fileInputMode.style.display = 'block';
+            }
+            updateAnalyzeButton();
+        });
+    });
+
+    // ── Text input ──
+    textInput.addEventListener('input', () => {
+        charCount.textContent = textInput.value.length + ' ký tự';
+        updateAnalyzeButton();
+    });
+
+    clearTextBtn.addEventListener('click', () => {
+        textInput.value = '';
+        charCount.textContent = '0 ký tự';
+        updateAnalyzeButton();
+        analysisResult.style.display = 'none';
+        analyzeStatus.style.display = 'none';
+    });
+
+    // ── Engine Toggle (Rule-based / AI) ──
+    const engineBtns = document.querySelectorAll('.engine-btn');
+    const aiSettings = document.getElementById('ai-settings');
+    const aiProviderSelect = document.getElementById('ai-provider');
+    const aiKeyStatus = document.getElementById('ai-key-status');
+
+    let currentEngine = 'rule'; // 'rule' | 'ai'
+    let aiConfigCache = null;
+
+    // Fetch AI config from server (reads env vars)
+    async function loadAIConfig() {
+        try {
+            const res = await fetch('/api/ai-config');
+            aiConfigCache = await res.json();
+            updateAIKeyStatus();
+        } catch (e) {
+            aiKeyStatus.textContent = '❌ Không thể kết nối server';
+        }
+    }
+
+    function updateAIKeyStatus() {
+        if (!aiConfigCache) return;
+        const provider = aiProviderSelect.value;
+        const info = aiConfigCache.providers[provider];
+        if (info && info.available) {
+            aiKeyStatus.textContent = `🟢 ${info.model} — sẵn sàng`;
+            aiKeyStatus.className = 'ai-key-status ready';
+        } else {
+            aiKeyStatus.textContent = '⚪ Chưa cấu hình key trong .env';
+            aiKeyStatus.className = 'ai-key-status';
+        }
+    }
+
+    engineBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const engine = btn.dataset.engine;
+            if (engine === currentEngine) return;
+            currentEngine = engine;
+
+            engineBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            aiSettings.style.display = engine === 'ai' ? 'block' : 'none';
+            if (engine === 'ai' && !aiConfigCache) loadAIConfig();
+            updateAnalyzeButton();
+        });
+    });
+
+    aiProviderSelect.addEventListener('change', () => {
+        updateAIKeyStatus();
+    });
+
+    function updateAnalyzeButton() {
+        if (currentMode === 'text') {
+            analyzeBtn.disabled = !textInput.value.trim();
+        } else {
+            analyzeBtn.disabled = selectedFiles.length === 0;
+        }
+    }
+
+    const FILE_ICONS = {
+        'docx': '📄', 'doc': '📄',
+        'txt': '📝', 'text': '📝', 'md': '📝', 'log': '📝',
+        'png': '🖼️', 'jpg': '🖼️', 'jpeg': '🖼️', 'bmp': '🖼️',
+        'tiff': '🖼️', 'webp': '🖼️',
+    };
+
+    function formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function getFileExtension(filename) {
+        return filename.split('.').pop().toLowerCase();
+    }
+
+    // Drop zone events
+    dropZone.addEventListener('click', () => fileInput.click());
+    
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-over');
+    });
+
+    dropZone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        const droppedFiles = Array.from(e.dataTransfer.files);
+        addFiles(droppedFiles);
+    });
+
+    fileInput.addEventListener('change', () => {
+        const files = Array.from(fileInput.files);
+        addFiles(files);
+        fileInput.value = ''; // Reset input
+    });
+
+    function addFiles(newFiles) {
+        const MAX = 5;
+        const MAX_SIZE = 10 * 1024 * 1024;
+
+        for (const file of newFiles) {
+            if (selectedFiles.length >= MAX) {
+                showAnalyzeStatus(`Tối đa ${MAX} file. Bỏ qua file "${file.name}".`, 'error');
+                break;
+            }
+            if (file.size > MAX_SIZE) {
+                showAnalyzeStatus(`File "${file.name}" quá lớn (${formatFileSize(file.size)}). Tối đa 10MB.`, 'error');
+                continue;
+            }
+            // Check duplicate
+            if (selectedFiles.some(f => f.name === file.name && f.size === file.size)) {
+                continue;
+            }
+            selectedFiles.push(file);
+        }
+        renderFileList();
+    }
+
+    function renderFileList() {
+        if (selectedFiles.length === 0) {
+            uploadedFilesContainer.style.display = 'none';
+            updateAnalyzeButton();
+            return;
+        }
+
+        uploadedFilesContainer.style.display = 'block';
+        updateAnalyzeButton();
+        fileListEl.innerHTML = '';
+
+        selectedFiles.forEach((file, index) => {
+            const ext = getFileExtension(file.name);
+            const icon = FILE_ICONS[ext] || '📎';
+
+            const card = document.createElement('div');
+            card.className = 'file-card';
+            card.innerHTML = `
+                <span class="file-card-icon">${icon}</span>
+                <div class="file-card-info">
+                    <span class="file-card-name" title="${file.name}">${file.name}</span>
+                    <span class="file-card-size">${formatFileSize(file.size)}</span>
+                </div>
+                <button type="button" class="file-card-remove" data-index="${index}" title="Xóa">&times;</button>
+            `;
+            fileListEl.appendChild(card);
+        });
+
+        // Bind remove buttons
+        fileListEl.querySelectorAll('.file-card-remove').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const idx = parseInt(btn.dataset.index);
+                selectedFiles.splice(idx, 1);
+                renderFileList();
+            });
+        });
+    }
+
+    clearFilesBtn.addEventListener('click', () => {
+        selectedFiles = [];
+        renderFileList();
+        analysisResult.style.display = 'none';
+        analyzeStatus.style.display = 'none';
+    });
+
+    // Analyze button
+    analyzeBtn.addEventListener('click', async () => {
+        // Loading state
+        analyzeBtnText.textContent = '⏳ Đang phân tích...';
+        analyzeSpinner.style.display = 'block';
+        analyzeBtn.disabled = true;
+        analyzeStatus.style.display = 'none';
+        analysisResult.style.display = 'none';
+
+        try {
+            let data;
+
+            if (currentMode === 'text') {
+                // ── Text mode: POST JSON ──
+                const text = textInput.value.trim();
+                if (!text) return;
+
+                const requestBody = { text, engine: currentEngine };
+                if (currentEngine === 'ai') {
+                    requestBody.provider = aiProviderSelect.value;
+                }
+
+                const response = await fetch('/api/analyze-text', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody),
+                });
+                data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Có lỗi xảy ra khi phân tích');
+                }
+
+                const engineLabel = currentEngine === 'ai' ? '🤖 AI' : '⚡ Rule-based';
+                let statusMsg = `<strong>Hoàn tất!</strong> ${engineLabel} — Tìm thấy ${data.items_found} mục.`;
+                if (data.ai_fallback) {
+                    statusMsg += ` <span style="color:#fbbf24">⚠️ AI lỗi, đã dùng rule-based thay thế.</span>`;
+                }
+
+                showAnalyzeStatus(statusMsg, 'success');
+
+                // Wrap single-text response into multi-format for renderAnalysisResults
+                data = {
+                    results: [{
+                        status: 'success',
+                        filename: 'text-input',
+                        type_stats: data.type_stats,
+                        items: data.items,
+                    }],
+                    combined_markdown: data.markdown,
+                };
+
+            } else {
+                // ── File mode: POST multipart ──
+                if (selectedFiles.length === 0) return;
+                const formData = new FormData();
+                selectedFiles.forEach(file => formData.append('files', file));
+
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    body: formData,
+                });
+                data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Có lỗi xảy ra khi phân tích');
+                }
+
+                showAnalyzeStatus(
+                    `<strong>Hoàn tất!</strong> Đã phân tích ${data.processed}/${data.total_files} file.` +
+                    (data.errors > 0 ? ` <span style="color:#f87171">(${data.errors} lỗi)</span>` : ''),
+                    'success'
+                );
+            }
+
+            renderAnalysisResults(data);
+
+        } catch (error) {
+            showAnalyzeStatus(`<strong>Lỗi:</strong> ${error.message}`, 'error');
+        } finally {
+            analyzeBtnText.textContent = '🔍 Phân tích tài liệu';
+            analyzeSpinner.style.display = 'none';
+            updateAnalyzeButton();
+        }
+    });
+
+    function showAnalyzeStatus(html, type) {
+        analyzeStatus.innerHTML = html;
+        analyzeStatus.className = `message ${type}`;
+        analyzeStatus.style.display = 'block';
+    }
+
+    function renderAnalysisResults(data) {
+        analysisResult.style.display = 'block';
+        lastMarkdown = data.combined_markdown || '';
+
+        // Compute total stats
+        let totalBugs = 0, totalTasks = 0, totalImprovements = 0, totalQuestions = 0;
+        for (const r of data.results) {
+            if (r.status !== 'success') continue;
+            totalBugs += (r.type_stats?.bug || 0);
+            totalTasks += (r.type_stats?.task || 0);
+            totalImprovements += (r.type_stats?.improvement || 0);
+            totalQuestions += (r.type_stats?.question || 0);
+        }
+        const totalItems = totalBugs + totalTasks + totalImprovements + totalQuestions;
+
+        // Render stats
+        resultStats.innerHTML = `
+            <div class="result-stat-card">
+                <div class="result-stat-value">${totalItems}</div>
+                <div class="result-stat-label">Tổng mục</div>
+            </div>
+            <div class="result-stat-card bugs">
+                <div class="result-stat-value">${totalBugs}</div>
+                <div class="result-stat-label">🐛 Bugs</div>
+            </div>
+            <div class="result-stat-card tasks">
+                <div class="result-stat-value">${totalTasks}</div>
+                <div class="result-stat-label">✅ Tasks</div>
+            </div>
+            <div class="result-stat-card improvements">
+                <div class="result-stat-value">${totalImprovements}</div>
+                <div class="result-stat-label">💡 Cải tiến</div>
+            </div>
+            <div class="result-stat-card questions">
+                <div class="result-stat-value">${totalQuestions}</div>
+                <div class="result-stat-label">❓ Câu hỏi</div>
+            </div>
+        `;
+
+        // Render markdown
+        if (lastMarkdown) {
+            markdownPreview.innerHTML = marked.parse(lastMarkdown);
+        } else {
+            markdownPreview.innerHTML = '<p class="empty-text">Không có kết quả phân tích.</p>';
+        }
+
+        // Smooth scroll to results
+        analysisResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // Copy markdown
+    copyMdBtn.addEventListener('click', async () => {
+        if (!lastMarkdown) return;
+        try {
+            await navigator.clipboard.writeText(lastMarkdown);
+            const originalText = copyMdBtn.innerHTML;
+            copyMdBtn.classList.add('copied');
+            copyMdBtn.innerHTML = '✓ Đã copy!';
+            setTimeout(() => {
+                copyMdBtn.innerHTML = originalText;
+                copyMdBtn.classList.remove('copied');
+            }, 2000);
+        } catch {
+            // Fallback
+            const textarea = document.createElement('textarea');
+            textarea.value = lastMarkdown;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+        }
+    });
+
+    // Download markdown
+    downloadMdBtn.addEventListener('click', () => {
+        if (!lastMarkdown) return;
+        const blob = new Blob([lastMarkdown], { type: 'text/markdown;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `analysis_report_${new Date().toISOString().slice(0, 10)}.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    });
 });
 
 

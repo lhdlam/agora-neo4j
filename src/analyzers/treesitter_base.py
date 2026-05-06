@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from src.analyzers.base import BaseAnalyzer, detect_layer_generic, path_to_module_generic
 from src.neo4j_graph import ComponentNode, GraphData
@@ -22,13 +22,13 @@ class TreeSitterAnalyzer(BaseAnalyzer):
         """Get a tree-sitter parser for the configured language."""
         from tree_sitter_language_pack import get_parser
 
-        return get_parser(self.ts_language)
+        return get_parser(cast(Any, self.ts_language))
 
     def _get_language(self) -> Any:
         """Get the tree-sitter Language object for queries."""
         from tree_sitter_language_pack import get_language
 
-        return get_language(self.ts_language)
+        return get_language(cast(Any, self.ts_language))
 
     def _node_text(self, node: object) -> str:
         """Extract text content from a tree-sitter node."""

@@ -10,6 +10,10 @@ services:
       - NEO4J_HOST=host.docker.internal
       - NEO4J_PORT=7687
       - WORKSPACE_BASE_PATH=${HOME}
+      # AI Document Analyzer
+      - AI_PROVIDER=${AI_PROVIDER:-groq}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - AI_MODEL_GROQ=${AI_MODEL_GROQ:-groq/compound}
     volumes:
       # Mount the entire home folder to allow scanning any local project
       - ${HOME}:${HOME}

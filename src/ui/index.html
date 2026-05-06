@@ -6,6 +6,7 @@
     <title>Agora - Neo4j Graph Manager</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -43,6 +44,114 @@
                     </button>
                 </form>
                 <div id="status-message" class="message" style="display: none;"></div>
+            </div>
+
+            <!-- Document Analyzer Section -->
+            <div class="glass-card analyzer-section">
+                <h2>📄 Document Analyzer</h2>
+                <p class="section-subtitle">Nhập mô tả hoặc upload tài liệu để phân tích Task & Bug thành Markdown</p>
+
+                <!-- Input Mode Tabs -->
+                <div class="input-mode-tabs">
+                    <button type="button" class="input-tab active" data-mode="text">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        📝 Nhập text
+                    </button>
+                    <button type="button" class="input-tab" data-mode="file">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        📂 Upload file
+                    </button>
+                </div>
+
+                <!-- Text Input Mode -->
+                <div id="text-input-mode" class="input-mode-panel">
+                    <textarea id="text-input" class="text-input" rows="10" placeholder="Nhập hoặc dán mô tả bug/task tại đây...&#10;&#10;Ví dụ:&#10;- Vị trí: Tên group dataseries ở legend panel&#10;- Phạm vi: legend panel ở live mode và file mode&#10;- Mô tả: font size và font weight hơi nhỏ&#10;- Mong muốn: tăng font size và weight"></textarea>
+                    <div class="text-input-footer">
+                        <span id="char-count" class="char-count">0 ký tự</span>
+                        <button type="button" id="clear-text-btn" class="text-btn">Xóa</button>
+                    </div>
+                </div>
+
+                <!-- File Input Mode -->
+                <div id="file-input-mode" class="input-mode-panel" style="display:none;">
+                    <!-- Drop Zone -->
+                    <div id="drop-zone" class="drop-zone">
+                        <div class="drop-zone-content">
+                            <svg class="drop-zone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            <p class="drop-zone-text">Kéo thả file vào đây hoặc <span class="browse-link">chọn file</span></p>
+                            <p class="drop-zone-hint">Hỗ trợ: .docx .txt .md .png .jpg (tối đa 10MB/file, 5 file)</p>
+                        </div>
+                        <input type="file" id="file-input" multiple accept=".docx,.txt,.md,.text,.log,.png,.jpg,.jpeg,.bmp,.tiff,.webp" style="display:none;">
+                    </div>
+
+                    <!-- Uploaded Files List -->
+                    <div id="uploaded-files" class="uploaded-files" style="display:none;">
+                        <div class="uploaded-files-header">
+                            <span>📎 File đã chọn</span>
+                            <button type="button" id="clear-files-btn" class="text-btn">Xóa tất cả</button>
+                        </div>
+                        <div id="file-list" class="file-list"></div>
+                    </div>
+                </div>
+
+                <!-- Engine Toggle -->
+                <div class="engine-toggle-section">
+                    <div class="engine-toggle">
+                        <button type="button" class="engine-btn active" data-engine="rule">
+                            ⚡ Rule-based
+                        </button>
+                        <button type="button" class="engine-btn" data-engine="ai">
+                            🤖 AI Analysis
+                        </button>
+                    </div>
+
+                    <!-- AI Settings (hidden by default) -->
+                    <div id="ai-settings" class="ai-settings" style="display:none;">
+                        <div class="ai-provider-row">
+                            <label class="ai-label">Provider:</label>
+                            <select id="ai-provider" class="ai-select">
+                                <option value="groq">⚡ Groq</option>
+                            </select>
+                            <span id="ai-key-status" class="ai-key-status">⚪ Đang kiểm tra...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analyze Button -->
+                <button type="button" id="analyze-btn" class="analyze-btn" disabled>
+                    <span class="btn-text">🔍 Phân tích tài liệu</span>
+                    <div class="spinner" id="analyze-spinner" style="display: none;"></div>
+                </button>
+
+                <!-- Analysis Status -->
+                <div id="analyze-status" class="message" style="display: none;"></div>
+
+                <!-- Analysis Result -->
+                <div id="analysis-result" class="analysis-result" style="display:none;">
+                    <div class="result-header">
+                        <h3>📋 Kết quả phân tích</h3>
+                        <div class="result-actions">
+                            <button type="button" id="copy-md-btn" class="icon-text-btn" title="Copy Markdown">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"></path></svg>
+                                Copy
+                            </button>
+                            <button type="button" id="download-md-btn" class="icon-text-btn" title="Download Markdown">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                Download
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Result Stats -->
+                    <div id="result-stats" class="result-stats"></div>
+
+                    <!-- Markdown Preview -->
+                    <div id="markdown-preview" class="markdown-preview"></div>
+                </div>
             </div>
 
             <div class="glass-card list-section">

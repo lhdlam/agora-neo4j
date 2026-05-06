@@ -50,9 +50,11 @@ class JavaScriptAnalyzer(TreeSitterAnalyzer):
         # Determine which grammar to use based on file extension
         ts_lang = "typescript" if filepath.suffix in (".ts", ".tsx") else "javascript"
 
+        from typing import Any, cast
+
         from tree_sitter_language_pack import get_parser
 
-        parser = get_parser(ts_lang)
+        parser = get_parser(cast(Any, ts_lang))
 
         try:
             source = filepath.read_bytes()
