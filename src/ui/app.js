@@ -614,20 +614,34 @@ document.addEventListener('DOMContentLoaded', () => {
     const analysisResult = document.getElementById('analysis-result');
     const resultStats = document.getElementById('result-stats');
     const markdownPreview = document.getElementById('markdown-preview');
+    const markdownRaw = document.getElementById('markdown-raw');
     const copyMdBtn = document.getElementById('copy-md-btn');
     const downloadMdBtn = document.getElementById('download-md-btn');
+    const toggleViewBtn = document.getElementById('toggle-view-btn');
+    const toggleViewText = document.getElementById('toggle-view-text');
 
     // Text input mode elements
     const textInputMode = document.getElementById('text-input-mode');
+    const formInputMode = document.getElementById('form-input-mode');
     const fileInputMode = document.getElementById('file-input-mode');
     const textInput = document.getElementById('text-input');
     const charCount = document.getElementById('char-count');
     const clearTextBtn = document.getElementById('clear-text-btn');
+    
+    // Form input mode elements
+    const formLocation = document.getElementById('form-location');
+    const formScope = document.getElementById('form-scope');
+    const formDesc = document.getElementById('form-desc');
+    const formExpected = document.getElementById('form-expected');
+    const formCharCount = document.getElementById('form-char-count');
+    const clearFormBtn = document.getElementById('clear-form-btn');
+    
     const inputTabs = document.querySelectorAll('.input-tab');
 
     let selectedFiles = [];
     let lastMarkdown = '';
     let currentMode = 'text'; // 'text' or 'file'
+    let isRawView = false;
 
     // ── Tab Switching ──
     inputTabs.forEach(tab => {
@@ -641,9 +655,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (mode === 'text') {
                 textInputMode.style.display = 'block';
+                formInputMode.style.display = 'none';
+                fileInputMode.style.display = 'none';
+            } else if (mode === 'form') {
+                textInputMode.style.display = 'none';
+                formInputMode.style.display = 'block';
                 fileInputMode.style.display = 'none';
             } else {
                 textInputMode.style.display = 'none';
+                formInputMode.style.display = 'none';
                 fileInputMode.style.display = 'block';
             }
             updateAnalyzeButton();
@@ -664,13 +684,43 @@ document.addEventListener('DOMContentLoaded', () => {
         analyzeStatus.style.display = 'none';
     });
 
+    // ── Form input ──
+    function getFormCombinedText() {
+        let lines = [];
+        if (formLocation.value.trim()) lines.push(`- Vị trí: ${formLocation.value.trim()}`);
+        if (formScope.value.trim()) lines.push(`- Phạm vi: ${formScope.value.trim()}`);
+        if (formDesc.value.trim()) lines.push(`- Mô tả: ${formDesc.value.trim()}`);
+        if (formExpected.value.trim()) lines.push(`- Mong muốn: ${formExpected.value.trim()}`);
+        return lines.join('\n');
+    }
+
+    const updateFormCharCount = () => {
+        formCharCount.textContent = getFormCombinedText().length + ' ký tự';
+        updateAnalyzeButton();
+    };
+
+    formLocation.addEventListener('input', updateFormCharCount);
+    formScope.addEventListener('input', updateFormCharCount);
+    formDesc.addEventListener('input', updateFormCharCount);
+    formExpected.addEventListener('input', updateFormCharCount);
+
+    clearFormBtn.addEventListener('click', () => {
+        formLocation.value = '';
+        formScope.value = '';
+        formDesc.value = '';
+        formExpected.value = '';
+        updateFormCharCount();
+        analysisResult.style.display = 'none';
+        analyzeStatus.style.display = 'none';
+    });
+
     // ── Engine Toggle (Rule-based / AI) ──
     const engineBtns = document.querySelectorAll('.engine-btn');
     const aiSettings = document.getElementById('ai-settings');
     const aiProviderSelect = document.getElementById('ai-provider');
     const aiKeyStatus = document.getElementById('ai-key-status');
 
-    let currentEngine = 'rule'; // 'rule' | 'ai'
+    let currentEngine = 'ai'; // 'rule' | 'ai'
     let aiConfigCache = null;
 
     // Fetch AI config from server (reads env vars)
@@ -716,9 +766,14 @@ document.addEventListener('DOMContentLoaded', () => {
         updateAIKeyStatus();
     });
 
+    // Initial load for AI config since default is 'ai'
+    loadAIConfig();
+
     function updateAnalyzeButton() {
         if (currentMode === 'text') {
             analyzeBtn.disabled = !textInput.value.trim();
+        } else if (currentMode === 'form') {
+            analyzeBtn.disabled = getFormCombinedText().length === 0;
         } else {
             analyzeBtn.disabled = selectedFiles.length === 0;
         }
@@ -847,9 +902,14 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             let data;
 
-            if (currentMode === 'text') {
-                // ── Text mode: POST JSON ──
-                const text = textInput.value.trim();
+            if (currentMode === 'text' || currentMode === 'form') {
+                // ── Text/Form mode: POST JSON ──
+                let text = '';
+                if (currentMode === 'text') {
+                    text = textInput.value.trim();
+                } else {
+                    text = getFormCombinedText();
+                }
                 if (!text) return;
 
                 const requestBody = { text, engine: currentEngine };
@@ -967,8 +1027,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Render markdown
         if (lastMarkdown) {
             markdownPreview.innerHTML = marked.parse(lastMarkdown);
+            markdownRaw.value = lastMarkdown;
         } else {
             markdownPreview.innerHTML = '<p class="empty-text">Không có kết quả phân tích.</p>';
+            markdownRaw.value = '';
         }
 
         // Smooth scroll to results
@@ -1010,6 +1072,20 @@ document.addEventListener('DOMContentLoaded', () => {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+    });
+
+    // Toggle raw/preview view
+    toggleViewBtn.addEventListener('click', () => {
+        isRawView = !isRawView;
+        if (isRawView) {
+            markdownPreview.style.display = 'none';
+            markdownRaw.style.display = 'block';
+            toggleViewText.textContent = 'Preview HTML';
+        } else {
+            markdownPreview.style.display = 'block';
+            markdownRaw.style.display = 'none';
+            toggleViewText.textContent = 'View Raw';
+        }
     });
 });
 

@@ -46,6 +46,18 @@
                 <div id="status-message" class="message" style="display: none;"></div>
             </div>
 
+            <div class="glass-card list-section">
+                <div class="list-header">
+                    <h2>Existing Projects</h2>
+                    <button id="refresh-btn" class="icon-btn" title="Refresh">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                    </button>
+                </div>
+                <div id="projects-list" class="projects-grid">
+                    <div class="loading-text">Loading projects...</div>
+                </div>
+            </div>
+
             <!-- Document Analyzer Section -->
             <div class="glass-card analyzer-section">
                 <h2>📄 Document Analyzer</h2>
@@ -56,6 +68,10 @@
                     <button type="button" class="input-tab active" data-mode="text">
                         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                         📝 Nhập text
+                    </button>
+                    <button type="button" class="input-tab" data-mode="form">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                        📋 Nhập form
                     </button>
                     <button type="button" class="input-tab" data-mode="file">
                         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
@@ -69,6 +85,32 @@
                     <div class="text-input-footer">
                         <span id="char-count" class="char-count">0 ký tự</span>
                         <button type="button" id="clear-text-btn" class="text-btn">Xóa</button>
+                    </div>
+                </div>
+
+                <!-- Form Input Mode -->
+                <div id="form-input-mode" class="input-mode-panel" style="display:none;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                        <div class="form-group" style="margin: 0;">
+                            <label for="form-location" style="display:block; margin-bottom: 4px; font-weight: 500; font-size: 0.85em; color: var(--text-secondary);">📍 Vị trí</label>
+                            <input type="text" id="form-location" placeholder="Ví dụ: Tên group dataseries ở legend panel" style="padding: 0.4rem 0.75rem; font-size: 0.9rem; height: 32px;">
+                        </div>
+                        <div class="form-group" style="margin: 0;">
+                            <label for="form-scope" style="display:block; margin-bottom: 4px; font-weight: 500; font-size: 0.85em; color: var(--text-secondary);">🎯 Phạm vi</label>
+                            <input type="text" id="form-scope" placeholder="Ví dụ: legend panel ở live mode và file mode" style="padding: 0.4rem 0.75rem; font-size: 0.9rem; height: 32px;">
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 12px;">
+                        <label for="form-desc" style="display:block; margin-bottom: 4px; font-weight: 500; font-size: 0.85em; color: var(--text-secondary);">📝 Mô tả</label>
+                        <textarea id="form-desc" class="text-input" rows="2" placeholder="Ví dụ: font size và font weight hơi nhỏ" style="min-height: 60px; padding: 0.5rem 0.75rem;"></textarea>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 12px;">
+                        <label for="form-expected" style="display:block; margin-bottom: 4px; font-weight: 500; font-size: 0.85em; color: var(--text-secondary);">✅ Mong muốn</label>
+                        <textarea id="form-expected" class="text-input" rows="2" placeholder="Ví dụ: tăng font size và weight" style="min-height: 60px; padding: 0.5rem 0.75rem;"></textarea>
+                    </div>
+                    <div class="text-input-footer" style="margin-top: 8px;">
+                        <span id="form-char-count" class="char-count">0 ký tự</span>
+                        <button type="button" id="clear-form-btn" class="text-btn">Xóa form</button>
                     </div>
                 </div>
 
@@ -101,16 +143,16 @@
                 <!-- Engine Toggle -->
                 <div class="engine-toggle-section">
                     <div class="engine-toggle">
-                        <button type="button" class="engine-btn active" data-engine="rule">
+                        <button type="button" class="engine-btn" data-engine="rule">
                             ⚡ Rule-based
                         </button>
-                        <button type="button" class="engine-btn" data-engine="ai">
+                        <button type="button" class="engine-btn active" data-engine="ai">
                             🤖 AI Analysis
                         </button>
                     </div>
 
                     <!-- AI Settings (hidden by default) -->
-                    <div id="ai-settings" class="ai-settings" style="display:none;">
+                    <div id="ai-settings" class="ai-settings" style="display:block;">
                         <div class="ai-provider-row">
                             <label class="ai-label">Provider:</label>
                             <select id="ai-provider" class="ai-select">
@@ -135,6 +177,10 @@
                     <div class="result-header">
                         <h3>📋 Kết quả phân tích</h3>
                         <div class="result-actions">
+                            <button type="button" id="toggle-view-btn" class="icon-text-btn" title="Toggle Raw/Preview">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                <span id="toggle-view-text">View Raw</span>
+                            </button>
                             <button type="button" id="copy-md-btn" class="icon-text-btn" title="Copy Markdown">
                                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"></path></svg>
                                 Copy
@@ -150,19 +196,10 @@
                     <div id="result-stats" class="result-stats"></div>
 
                     <!-- Markdown Preview -->
-                    <div id="markdown-preview" class="markdown-preview"></div>
-                </div>
-            </div>
-
-            <div class="glass-card list-section">
-                <div class="list-header">
-                    <h2>Existing Projects</h2>
-                    <button id="refresh-btn" class="icon-btn" title="Refresh">
-                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-                    </button>
-                </div>
-                <div id="projects-list" class="projects-grid">
-                    <div class="loading-text">Loading projects...</div>
+                    <div id="markdown-container">
+                        <div id="markdown-preview" class="markdown-preview"></div>
+                        <textarea id="markdown-raw" class="text-input" style="display:none; width: 100%; height: 400px; font-family: monospace; margin-top: 1rem; resize: vertical; background: rgba(15, 23, 42, 0.4); color: #e2e8f0; border: 1px solid rgba(255, 255, 255, 0.1);" readonly></textarea>
+                    </div>
                 </div>
             </div>
         </main>
